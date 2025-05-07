@@ -25,10 +25,39 @@ all_gene_ids <- unique(c(bdp_pairs$watson_ensembl_id, bdp_pairs$crick_ensembl_id
 all_gene_ids <- na.omit(all_gene_ids)
 
 # Step 5: Query gene-level annotations
-gene_annotations <- getBM(attributes = gene_attributes,
-                          filters = "ensembl_gene_id",
-                          values = all_gene_ids,
-                          mart = ensembl)
+# Core attributes that always exist
+essential_attrs <- c("ensembl_gene_id", "external_gene_name", "gene_biotype", "description")
+essential_annotations <- getBM(
+  attributes = essential_attrs,
+  filters = "ensembl_gene_id",
+  values = all_gene_ids,
+  mart = ensembl
+)
+
+# Optional annotations (may be missing for some genes)
+refseq_annotations <- getBM(
+  attributes = c("ensembl_gene_id", "refseq_ncrna"),
+  filters = "ensembl_gene_id",
+  values = all_gene_ids,
+  mart = ensembl
+)
+
+uniprot_annotations <- getBM(
+  attributes = c("ensembl_gene_id", "uniprotswissprot"),
+  filters = "ensembl_gene_id",
+  values = all_gene_ids,
+  mart = ensembl
+)
+
+uniprot_annotations <- uniprot_annotations %>%
+  group_by(ensembl_gene_id) %>%
+  slice(1) %>%
+  ungroup()
+
+# Combine all annotations (keeps all genes even if some fields are missing)
+gene_annotations <- essential_annotations %>%
+  left_join(refseq_annotations, by = "ensembl_gene_id") %>%
+  left_join(uniprot_annotations, by = "ensembl_gene_id")
 
 # Step 5a: Deduplicate (1 row per gene ID)
 gene_annotations <- gene_annotations %>%
@@ -81,35 +110,35 @@ bdp_annotated <- bdp_pairs %>%
 
 
 #UNIPROT ANNOTATIONS
+#head(na.omit(unique(c(bdp_annotated$watson_uniprot, bdp_annotated$crick_uniprot))), 500)
 
 # Step 9: Combine all UniProt IDs and remove NA
 all_uniprot_ids <- unique(c(bdp_annotated$watson_uniprot, bdp_annotated$crick_uniprot))
 all_uniprot_ids <- na.omit(all_uniprot_ids)
-all_uniprot_ids <- all_uniprot_ids[grepl("^[OPQ][0-9][A-Z0-9]{3}[0-9]$", all_uniprot_ids)]
+all_uniprot_ids <- all_uniprot_ids[!is.na(all_uniprot_ids) & all_uniprot_ids != ""]
 
 
 # Step 10: Function to query UniProt API for one ID
 get_uniprot_keywords <- function(id) {
+  
   url <- paste0("https://rest.uniprot.org/uniprotkb/", id, ".json")
   res <- tryCatch(GET(url), error = function(e) NULL)
   
   if (!is.null(res) && status_code(res) == 200) {
-    data <- httr::content(res, as = "parsed", encoding = "UTF-8")
+    data <- httr::content(res, encoding = "UTF-8")
     
     if (!is.null(data$keywords) && length(data$keywords) > 0) {
-      # Use human-readable labels
-      valid_keywords <- Filter(function(k) !is.null(k$label) && nzchar(k$label), data$keywords)
+      valid_keywords <- Filter(function(k) !is.null(k$name) && nzchar(k$name), data$keywords)
       
       if (length(valid_keywords) > 0) {
-        kw <- vapply(valid_keywords, function(k) k$label, character(1))
+        kw <- vapply(valid_keywords, function(k) k$name, character(1))
         return(data.frame(uniprot_id = rep(id, length(kw)), keyword = kw))
       }
     }
   }
+  
   return(data.frame(uniprot_id = id, keyword = NA_character_))
 }
-
-
 
 # Step 11: Loop through IDs and fetch keywords
 pb <- progress_bar$new(
@@ -122,15 +151,22 @@ keyword_list <- vector("list", length(all_uniprot_ids))
 for (i in seq_along(all_uniprot_ids)) {
   keyword_list[[i]] <- get_uniprot_keywords(all_uniprot_ids[i])
   pb$tick()
-  Sys.sleep(0.2)  # Pause to avoid rate limiting
+  Sys.sleep(0.2)  # avoid rate limiting
 }
 
+# Step 12: Collapse multiple keyword rows into one per UniProt ID
 uniprot_keywords <- bind_rows(keyword_list)
-# Step 12: Join keywords to Watson and Crick columns
-watson_keywords <- uniprot_keywords %>%
+
+uniprot_keywords_collapsed <- uniprot_keywords %>%
+  group_by(uniprot_id) %>%
+  summarise(keyword = paste(na.omit(keyword), collapse = "; ")) %>%
+  ungroup()
+
+# Step 13: Join keywords back to Watson and Crick
+watson_keywords <- uniprot_keywords_collapsed %>%
   rename(watson_uniprot = uniprot_id, watson_keyword = keyword)
 
-crick_keywords <- uniprot_keywords %>%
+crick_keywords <- uniprot_keywords_collapsed %>%
   rename(crick_uniprot = uniprot_id, crick_keyword = keyword)
 
 bdp_annotated <- bdp_annotated %>%
