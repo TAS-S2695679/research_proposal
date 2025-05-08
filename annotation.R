@@ -173,5 +173,67 @@ bdp_annotated <- bdp_annotated %>%
   left_join(watson_keywords, by = "watson_uniprot") %>%
   left_join(crick_keywords, by = "crick_uniprot")
 
-#Write Final Annotated Table
+
+# Step 14: Extract all transcript IDs from Watson and Crick
+transcript_ids <- unique(c(bdp_annotated$watson_transcript_id, bdp_annotated$crick_transcript_id))
+transcript_ids <- na.omit(transcript_ids)
+
+# Step 15: Query GENCODE transcript-level annotations via Ensembl BioMart
+gencode_attrs <- c(
+  "ensembl_transcript_id",
+  "transcript_biotype",
+  "transcript_gencode_basic",
+  "transcript_tsl",
+  "transcript_appris",
+  "transcript_is_canonical"
+)
+
+gencode_data <- getBM(
+  attributes = gencode_attrs,
+  filters = "ensembl_transcript_id",
+  values = transcript_ids,
+  mart = ensembl
+)
+
+# Step 16: Clean and prioritise GENCODE entries (canonical, basic, TSL)
+gencode_data_clean <- gencode_data %>%
+  arrange(desc(transcript_is_canonical), desc(transcript_gencode_basic == "GENCODE basic"), transcript_tsl) %>%
+  group_by(ensembl_transcript_id) %>%
+  slice(1) %>%
+  ungroup()
+
+# Step 17: Prepare strand-specific GENCODE data
+watson_gencode <- gencode_data_clean %>%
+  filter(ensembl_transcript_id %in% bdp_annotated$watson_transcript_id) %>%
+  rename(watson_transcript_id = ensembl_transcript_id,
+         watson_biotype_gencode = transcript_biotype,
+         watson_gencode_basic = transcript_gencode_basic,
+         watson_tsl = transcript_tsl,
+         watson_appris = transcript_appris,
+         watson_canonical = transcript_is_canonical)
+
+crick_gencode <- gencode_data_clean %>%
+  filter(ensembl_transcript_id %in% bdp_annotated$crick_transcript_id) %>%
+  rename(crick_transcript_id = ensembl_transcript_id,
+         crick_biotype_gencode = transcript_biotype,
+         crick_gencode_basic = transcript_gencode_basic,
+         crick_tsl = transcript_tsl,
+         crick_appris = transcript_appris,
+         crick_canonical = transcript_is_canonical)
+
+# Step 18: Merge GENCODE annotations into main table
+bdp_annotated <- bdp_annotated %>%
+  left_join(watson_gencode, by = "watson_transcript_id") %>%
+  left_join(crick_gencode, by = "crick_transcript_id")
+
+# Reorder columns to improve readability
+core_cols <- c("BDP_ID", "Chromosome", "watson_start", "watson_end", "crick_start", "crick_end")
+
+watson_cols <- names(bdp_annotated)[startsWith(names(bdp_annotated), "watson_") & !(names(bdp_annotated) %in% core_cols)]
+crick_cols <- names(bdp_annotated)[startsWith(names(bdp_annotated), "crick_") & !(names(bdp_annotated) %in% core_cols)]
+
+updated_col_order <- c(core_cols, sort(watson_cols), sort(crick_cols))
+bdp_annotated <- bdp_annotated[, updated_col_order]
+
+#Write Final Fully Annotated Table
 write_csv(bdp_annotated, "BDP_Fully_Annotated.csv")
