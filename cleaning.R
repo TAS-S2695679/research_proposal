@@ -1,8 +1,9 @@
 library(dplyr)
 library(readr)
 library(stringr)
+library(biomaRt)
 
-# Step 1: Load the Catalogue
+# Step 1: Load the Cataloguew
 catalogue <- read_csv("Catalogue.csv")
 
 # Step 2: Filter to transcript-level entries only
@@ -43,6 +44,29 @@ bdp_clean <- bdp_pairs %>%
     crick_start = Start_crick,
     crick_end = End_crick
   )
+
+ensembl <- useEnsembl(biomart = "genes", dataset = "mmusculus_gene_ensembl")
+
+# Collect all unique gene IDs
+all_gene_ids <- unique(c(bdp_clean$watson_ensembl_id, bdp_clean$crick_ensembl_id))
+all_gene_ids <- na.omit(all_gene_ids)
+
+# Query start and end positions
+gene_coords <- getBM(
+  attributes = c("ensembl_gene_id", "start_position", "end_position"),
+  filters = "ensembl_gene_id",
+  values = all_gene_ids,
+  mart = ensembl
+) %>%
+  mutate(gene_length = end_position - start_position + 1) %>%
+  select(ensembl_gene_id, gene_length)
+
+# Add lengths for both strands
+bdp_clean <- bdp_clean %>%
+  left_join(gene_coords, by = c("watson_ensembl_id" = "ensembl_gene_id")) %>%
+  rename(watson_length = gene_length) %>%
+  left_join(gene_coords, by = c("crick_ensembl_id" = "ensembl_gene_id")) %>%
+  rename(crick_length = gene_length)
 
 # Step 7: Output to CSV
 write_csv(bdp_clean, "BDP_Cleaned_Pairs.csv")
