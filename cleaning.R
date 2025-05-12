@@ -71,5 +71,4 @@ bdp_clean <- bdp_clean %>%
 # Step 7: Output to CSV
 write_csv(bdp_clean, "BDP_Cleaned_Pairs.csv")
 
-# Step 8: Preview result
-print(head(bdp_clean))
+#print(head(bdp_clean))

@@ -184,3 +184,25 @@ GO_crick_CC <- enrichGO(
 
 write.csv(as.data.frame(GO_crick_CC), "GO_CC_Crick.csv", row.names = FALSE)
 dotplot(GO_crick_CC, showCategory = 20, title = "GO:CC Enrichment – Crick Strand")
+
+
+#--------- Creating Custom Background ----------
+expression_data <- read_csv("expression_dataset.csv")
+
+expression_data <- expression_data %>%
+  distinct(ensembl_gene_id, .keep_all = TRUE)
+
+control_pool <- expression_data %>%
+  filter(!ensembl_gene_id %in% bdp_genes)
+
+count(control_pool)
+length(bdp_genes)
+count(expression_data)
+
+17246-5356 #not equal to count of control pool?
+
+length(bdp_genes)
+length(unique(bdp_genes))
+expression_data %>%
+  count(ensembl_gene_id) %>%
+  filter(n > 1)
