@@ -18,14 +18,37 @@ bdp_pairs <- read_csv("BDP_Cleaned_Pairs.csv")
 ensembl <- useEnsembl(biomart = "genes", dataset = "mmusculus_gene_ensembl")
 
 # --------------------------- Step 3: Gene-Level Annotation -------------------
-gene_attributes <- c("ensembl_gene_id", "external_gene_name", "gene_biotype", 
-                     "description", "refseq_ncrna", "uniprotswissprot")
 
-all_gene_ids <- na.omit(unique(c(bdp_pairs$watson_ensembl_id, bdp_pairs$crick_ensembl_id)))
+# Essential attributes – always available
+essential_attrs <- c("ensembl_gene_id", "external_gene_name", "gene_biotype", "description")
+essential_annotations <- getBM(attributes = essential_attrs,
+                               filters = "ensembl_gene_id",
+                               values = all_gene_ids,
+                               mart = ensembl)
 
-gene_data <- getBM(attributes = gene_attributes, filters = "ensembl_gene_id", 
-                   values = all_gene_ids, mart = ensembl)
+# Optional attributes – may be missing for some genes
+refseq_annotations <- getBM(attributes = c("ensembl_gene_id", "refseq_ncrna"),
+                            filters = "ensembl_gene_id",
+                            values = all_gene_ids,
+                            mart = ensembl)
 
+uniprot_annotations <- getBM(attributes = c("ensembl_gene_id", "uniprotswissprot"),
+                             filters = "ensembl_gene_id",
+                             values = all_gene_ids,
+                             mart = ensembl)
+
+# Deduplicate UniProt
+uniprot_annotations <- uniprot_annotations %>%
+  group_by(ensembl_gene_id) %>%
+  slice(1) %>%
+  ungroup()
+
+# Merge essential and optional parts
+gene_data <- essential_annotations %>%
+  left_join(refseq_annotations, by = "ensembl_gene_id") %>%
+  left_join(uniprot_annotations, by = "ensembl_gene_id")
+
+# Ensure one row per gene
 gene_data <- gene_data %>%
   group_by(ensembl_gene_id) %>%
   slice(1) %>%

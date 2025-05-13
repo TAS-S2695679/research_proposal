@@ -195,14 +195,52 @@ expression_data <- expression_data %>%
 control_pool <- expression_data %>%
   filter(!ensembl_gene_id %in% bdp_genes)
 
-count(control_pool)
-length(bdp_genes)
-count(expression_data)
+#count(control_pool)
+#length(bdp_genes)
+#count(expression_data)
 
-17246-5356 #not equal to count of control pool?
+foreground_metadata <- foreground_metadata %>%
+  left_join(expression_data, by = c("ensembl_id" = "ensembl_gene_id")) %>%
+  filter(!is.na(length) & !is.na(biotype)) %>%
+  mutate(
+    expression_bin = ifelse(is.na(baseMean), "missing", ntile(baseMean, 4)),
+    length_bin = ntile(length, 4),
+    biotype_bin = biotype
+  )
 
-length(bdp_genes)
-length(unique(bdp_genes))
-expression_data %>%
-  count(ensembl_gene_id) %>%
-  filter(n > 1)
+control_pool <- control_pool %>%
+  mutate(
+    expression_bin = ifelse(is.na(baseMean), "missing", ntile(baseMean, 4)),
+    length_bin = ntile(gene_length, 4),
+    biotype_bin = gene_biotype
+  )
+
+bin_counts <- foreground_metadata %>%
+  group_by(biotype_bin, length_bin, expression_bin) %>%
+  summarise(n = n(), .groups = "drop")
+
+set.seed(42)
+matched_background <- bin_counts %>%
+  group_by(biotype_bin, length_bin, expression_bin) %>%
+  group_modify(~ {
+    candidates <- control_pool %>%
+      filter(
+        gene_biotype == .y$biotype_bin,
+        length_bin == .y$length_bin,
+        expression_bin == .y$expression_bin
+      ) %>%
+      select(-biotype_bin, -length_bin, -expression_bin)  # 🔧 strip grouping cols
+    
+    if (nrow(candidates) >= .x$n[1]) {
+      sample_n(candidates, .x$n[1])
+    } else {
+      candidates
+    }
+  }) %>%
+  ungroup()
+
+write.csv(matched_background, "matched_background.csv", row.names = FALSE)
+
+#Of the 5,356 genes associated with bidirectional promoters (BDPs), 5,335 (99.6%) were successfully mapped from RefSeq transcript IDs to Ensembl gene identifiers using biomaRt. A small number (21 genes) could not be mapped and were excluded from downstream analysis.
+#Following mapping, biotype annotations were retrieved from Ensembl. A total of 1,438 BDP-mapped genes lacked a defined biotype and were filtered out to ensure compatibility with background matching. This resulted in 3,897 BDP genes retained for custom enrichment analysis using a matched control background. These represent the subset with both valid expression measurements and functional annotations.
+#The remaining 1,459 BDP genes (21 unmapped + 1,438 unannotated) were included in the initial default-background enrichment analysis (using org.Mm.eg.db) but excluded from custom background enrichment to avoid bias introduced by unmatched gene properties.

@@ -9,15 +9,28 @@ head(expr_raw$baseMean)
 
 ensembl <- useEnsembl(biomart = "genes", dataset = "mmusculus_gene_ensembl")
 
-mapping <- getBM(
+mapping_mrna <- getBM(
   attributes = c("refseq_mrna", "ensembl_gene_id"),
   filters = "refseq_mrna",
   values = expr_raw$ID,
   mart = ensembl
 )
 
+mapping_ncrna <- getBM(
+  attributes = c("refseq_ncrna", "ensembl_gene_id"),
+  filters = "refseq_ncrna",
+  values = expr_raw$ID,
+  mart = ensembl
+)
+
+colnames(mapping_mrna)[1] <- "refseq_id"
+colnames(mapping_ncrna)[1] <- "refseq_id"
+
+mapping_combined <- bind_rows(mapping_mrna, mapping_ncrna) %>%
+  distinct()
+
 expr_mapped <- expr_raw %>%
-  left_join(mapping, by = c("ID" = "refseq_mrna")) %>%
+  left_join(mapping_combined, by = c("ID" = "refseq_id")) %>%
   filter(!is.na(ensembl_gene_id))
 
 head(expr_mapped)
