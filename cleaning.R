@@ -2,9 +2,10 @@ library(dplyr)
 library(readr)
 library(stringr)
 library(biomaRt)
+library(tidyverse)
 
 # Step 1: Load the Cataloguew
-catalogue <- read_csv("Catalogue.csv")
+catalogue <- read_csv("Catalogue.csv") %>% as_tibble()
 
 # Step 2: Filter to transcript-level entries only
 transcripts <- catalogue %>%
@@ -59,7 +60,7 @@ gene_coords <- getBM(
   mart = ensembl
 ) %>%
   mutate(gene_length = end_position - start_position + 1) %>%
-  select(ensembl_gene_id, gene_length)
+  dplyr::select(ensembl_gene_id, gene_length)
 
 # Add lengths for both strands
 bdp_clean <- bdp_clean %>%
