@@ -1,17 +1,3 @@
-# R session files
-.Rhistory
-.RData
-.Rproj.user/
-
-# CSV and temporary output
 *.csv
-*.tsv
-*.txt
 
-# Cache/output folders
-*/output/
-*/results/
-
-# System files
-.DS_Store
 .RData

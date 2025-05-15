@@ -67,6 +67,13 @@ valid_bdp_symbols <- mapped_bdp$SYMBOL
 
 default_universe_symbols <- keys(org.Mm.eg.db, keytype = "SYMBOL")
 
+#--------- Evaluation of Coverage for Enrichment ---------
+total_bdp_genes <- nrow(bdp) * 2
+inclusion_rate <- length(bdp_genes) / total_bdp_genes * 100
+cat("Total BDP-associated genes:", total_bdp_genes, "\n")
+cat("Genes included in enrichment:", length(bdp_genes), "\n")
+cat("Inclusion rate:", round(inclusion_rate, 1), "%\n")
+
 #--------- GO Enrichment using clusterProfiler ----------
 
 GO_combined <- enrichGO(
@@ -306,3 +313,5 @@ write.csv(as.data.frame(GO_combined_custom), "GO_combined_custom.csv", row.names
 
 
 #--------- Complementary Analysis Using gProfiler to Highlight LncRNA ----------
+#As 26 lncRNA genes were dropped to form the custom_valid universe, leaving us only with 
+

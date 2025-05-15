@@ -19,13 +19,13 @@ transcripts <- transcripts %>%
 watson <- transcripts %>%
   filter(Strand_Pos == "+") %>%
   group_by(BDP_ID) %>%
-  slice(1) %>%
+  dplyr::slice(1) %>%
   ungroup()
 
 crick <- transcripts %>%
   filter(Strand_Neg == "-") %>%
   group_by(BDP_ID) %>%
-  slice(1) %>%
+  dplyr::slice(1) %>%
   ungroup()
 
 # Step 5: Join Watson and Crick into BDP pairs
@@ -67,7 +67,7 @@ bdp_clean <- bdp_clean %>%
   left_join(gene_coords, by = c("watson_ensembl_id" = "ensembl_gene_id")) %>%
   rename(watson_length = gene_length) %>%
   left_join(gene_coords, by = c("crick_ensembl_id" = "ensembl_gene_id")) %>%
-  rename(crick_length = gene_length)
+  dplyr::rename(crick_length = gene_length)
 
 # Step 7: Output to CSV
 write_csv(bdp_clean, "BDP_Cleaned_Pairs.csv")
