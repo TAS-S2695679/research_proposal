@@ -13,7 +13,7 @@ library(progress)
 
 # --------------------------- Step 1: Load BDP Pair Metadata ------------------
 bdp_pairs <- read_csv("BDP_Cleaned_Pairs.csv")
-
+all_gene_ids <- na.omit(unique(c(bdp_pairs$watson_ensembl_id, bdp_pairs$crick_ensembl_id)))
 # --------------------------- Step 2: Setup BioMart ---------------------------
 ensembl <- useEnsembl(biomart = "genes", dataset = "mmusculus_gene_ensembl")
 

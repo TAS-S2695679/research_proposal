@@ -10,12 +10,12 @@ bdp <- read_csv("BDP_Fully_Annotated.csv")
 
 # Get total number of unique Ensembl gene IDs per strand
 n_watson <- bdp %>%
-  filter(!is.na(watson_gene_name_updated)) %>%
+  filter(!is.na(watson_ensembl_id)) %>%
   distinct(watson_ensembl_id) %>%
   nrow()
 
 n_crick <- bdp %>%
-  filter(!is.na(crick_gene_name_updated)) %>%
+  filter(!is.na(crick_ensembl_id)) %>%
   distinct(crick_ensembl_id) %>%
   nrow()
 

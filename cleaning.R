@@ -46,6 +46,52 @@ bdp_clean <- bdp_pairs %>%
     crick_end = End_crick
   )
 
+bdp_clean <- bdp_clean %>%
+  mutate(Chromosome = str_replace(Chromosome, "^chr", ""))
+
+#--------- Add in the IDs which were identified through the rescue script -------
+
+rescued <- read_csv("Rescued_Gene_Annotations.csv")
+
+# Prepare Watson and Crick rescue data
+watson_rescue <- rescued %>%
+  filter(strand == 1) %>%
+  rename(watson_start = start, watson_end = end, Chromosome = chromosome)
+
+crick_rescue <- rescued %>%
+  filter(strand == -1) %>%
+  rename(crick_start = start, crick_end = end, Chromosome = chromosome)
+
+# Merge rescued Watson IDs
+bdp_clean <- bdp_clean %>%
+  left_join(watson_rescue %>%
+              select(Chromosome, watson_start, watson_end, ensembl_gene_id, external_gene_name) %>%
+              rename(
+                watson_ensembl_id_rescued = ensembl_gene_id,
+                watson_gene_name_rescued = external_gene_name
+              ),
+            by = c("Chromosome", "watson_start", "watson_end"))
+
+# Merge rescued Crick IDs
+bdp_clean <- bdp_clean %>%
+  left_join(crick_rescue %>%
+              select(Chromosome, crick_start, crick_end, ensembl_gene_id, external_gene_name) %>%
+              rename(
+                crick_ensembl_id_rescued = ensembl_gene_id,
+                crick_gene_name_rescued = external_gene_name
+              ),
+            by = c("Chromosome", "crick_start", "crick_end"))
+
+# Fill in missing Ensembl IDs and gene names
+bdp_clean <- bdp_clean %>%
+  mutate(
+    watson_ensembl_id = ifelse(is.na(watson_ensembl_id), watson_ensembl_id_rescued, watson_ensembl_id),
+    watson_gene_name = ifelse(is.na(watson_gene_name), watson_gene_name_rescued, watson_gene_name),
+    crick_ensembl_id = ifelse(is.na(crick_ensembl_id), crick_ensembl_id_rescued, crick_ensembl_id),
+    crick_gene_name = ifelse(is.na(crick_gene_name), crick_gene_name_rescued, crick_gene_name)
+  )
+
+
 ensembl <- useEnsembl(biomart = "genes", dataset = "mmusculus_gene_ensembl")
 
 # Collect all unique gene IDs
