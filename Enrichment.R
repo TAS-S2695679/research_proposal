@@ -19,53 +19,25 @@ library(gprofiler2)
 bdp <- read_csv("BDP_Fully_Annotated.csv")
 
 # Extracting the individual Ensembl ids from master dataset FOR EACH STRAND and removing any NA values.
-watson_genes <- bdp %>%
-  dplyr::select(watson_ensembl_id) %>%
-  distinct() %>%
-  filter(!is.na(watson_ensembl_id)) %>%
-  pull(watson_ensembl_id)
-
-crick_genes <- bdp %>%
-  dplyr::select(crick_ensembl_id) %>%
-  distinct() %>%
-  filter(!is.na(crick_ensembl_id)) %>%
-  pull(crick_ensembl_id)
+bdp <- read_csv("BDP_Fully_Annotated.csv")
 
 watson_meta <- bdp %>%
-  dplyr::select(watson_ensembl_id, watson_biotype, watson_length) %>%
-  distinct() %>%
-  dplyr::rename(ensembl_id = watson_ensembl_id,
+  select(watson_ensembl_id, watson_biotype, watson_length) %>%
+  rename(ensembl_id = watson_ensembl_id,
          biotype = watson_biotype,
          length = watson_length)
 
 crick_meta <- bdp %>%
-  dplyr::select(crick_ensembl_id, crick_biotype, crick_length) %>%
-  distinct() %>%
-  dplyr::rename(ensembl_id = crick_ensembl_id,
+  select(crick_ensembl_id, crick_biotype, crick_length) %>%
+  rename(ensembl_id = crick_ensembl_id,
          biotype = crick_biotype,
          length = crick_length)
 
-# Combine both
 foreground_metadata <- bind_rows(watson_meta, crick_meta) %>%
   filter(!is.na(ensembl_id)) %>%
   distinct()
 
-
-
-#--------- Default Background Setup ----------
-background_genes <- AnnotationDbi::keys(org.Mm.eg.db, keytype = "ENSEMBL")
-
-bdp_genes <- unique(c(watson_genes, crick_genes))
-
-background_genes_filtered <- setdiff(background_genes, bdp_genes)
-
-#Map ensembl ids to symbols
-mapped_bdp <- bitr(bdp_genes, fromType = "ENSEMBL", toType = "SYMBOL", OrgDb = org.Mm.eg.db)
-valid_bdp_symbols <- mapped_bdp$SYMBOL
-#head(watson_genes)
-#head(background_genes_filtered)
-
-default_universe_symbols <- keys(org.Mm.eg.db, keytype = "SYMBOL")
+bdp_genes <- foreground_metadata$ensembl_id
 
 #--------- Evaluation of Coverage for Enrichment ---------
 total_bdp_genes <- nrow(bdp) * 2
@@ -74,177 +46,49 @@ cat("Total BDP-associated genes:", total_bdp_genes, "\n")
 cat("Genes included in enrichment:", length(bdp_genes), "\n")
 cat("Inclusion rate:", round(inclusion_rate, 1), "%\n")
 
+
 #--------- GO Enrichment using clusterProfiler ----------
+# --------- Creating Custom Background (Universal Binning) ---------
 
-GO_combined <- enrichGO(
-  gene          = valid_bdp_symbols,
-  universe      = default_universe_symbols,
-  OrgDb         = org.Mm.eg.db,
-  keyType       = "SYMBOL",
-  ont           = "BP",
-  pAdjustMethod = "BH",
-  pvalueCutoff  = 0.05,
-  qvalueCutoff  = 0.05,
-  readable      = TRUE
-)
-
-write.csv(as.data.frame(GO_combined), "GO_BP_combined.csv", row.names = FALSE)
-
-GO_watson <- enrichGO(
-  gene          = watson_genes,
-  OrgDb         = org.Mm.eg.db,
-  keyType       = "ENSEMBL",
-  ont           = "BP",                  # You can repeat for MF and CC separately
-  pAdjustMethod = "BH",                 # Benjamini-Hochberg FDR control
-  pvalueCutoff  = 0.05,                 # Strict threshold
-  qvalueCutoff  = 0.05,                 # Adds redundancy control
-  minGSSize     = 10,                   # Ignore overly small GO categories
-  maxGSSize     = 500,                  # Exclude overly general ones
-  readable      = TRUE                  # Convert Ensembl to gene symbols
-)
-
-GO_watson
-
-#head(GO_watson)
-
-as.data.frame(GO_watson)[100:200, c("ID", "Description", "GeneRatio", "p.adjust")]
-
-# Dotplot
-dotplot(GO_watson, showCategory = 20, title = "GO:BP Enrichment – Watson Strand")
-
-write.csv(as.data.frame(GO_watson), "GO_BP_Watson.csv", row.names = FALSE)
-
-
-GO_crick <- enrichGO(
-  gene          = crick_genes,
-  OrgDb         = org.Mm.eg.db,
-  keyType       = "ENSEMBL",
-  ont           = "BP",                  # You can repeat for MF and CC separately
-  pAdjustMethod = "BH",                 # Benjamini-Hochberg FDR control
-  pvalueCutoff  = 0.05,                 # Strict threshold
-  qvalueCutoff  = 0.05,                 # Adds redundancy control
-  minGSSize     = 10,                   # Ignore overly small GO categories
-  maxGSSize     = 500,                  # Exclude overly general ones
-  readable      = TRUE                  # Convert Ensembl to gene symbols
-)
-
-GO_crick
-
-#head(GO_crick)
-
-as.data.frame(GO_crick)[100:200, c("ID", "Description", "GeneRatio", "p.adjust")]
-
-# Dotplot
-dotplot(GO_crick, showCategory = 20, title = "GO:BP Enrichment – Crick Strand")
-
-
-write.csv(as.data.frame(GO_crick), "GO_BP_Crick.csv", row.names = FALSE)
-
-
-#--------- GO:MF Enrichment ----------
-
-GO_watson_MF <- enrichGO(
-  gene          = watson_genes,
-  OrgDb         = org.Mm.eg.db,
-  keyType       = "ENSEMBL",
-  ont           = "MF",
-  pAdjustMethod = "BH",
-  pvalueCutoff  = 0.05,
-  qvalueCutoff  = 0.05,
-  minGSSize     = 10,
-  maxGSSize     = 500,
-  readable      = TRUE
-)
-
-write.csv(as.data.frame(GO_watson_MF), "GO_MF_Watson.csv", row.names = FALSE)
-dotplot(GO_watson_MF, showCategory = 20, title = "GO:MF Enrichment – Watson Strand")
-
-
-GO_crick_MF <- enrichGO(
-  gene          = crick_genes,
-  OrgDb         = org.Mm.eg.db,
-  keyType       = "ENSEMBL",
-  ont           = "MF",
-  pAdjustMethod = "BH",
-  pvalueCutoff  = 0.05,
-  qvalueCutoff  = 0.05,
-  minGSSize     = 10,
-  maxGSSize     = 500,
-  readable      = TRUE
-)
-
-write.csv(as.data.frame(GO_crick_MF), "GO_MF_Crick.csv", row.names = FALSE)
-dotplot(GO_crick_MF, showCategory = 20, title = "GO:MF Enrichment – Crick Strand")
-
-#--------- GO:CC Enrichment ----------
-
-GO_watson_CC <- enrichGO(
-  gene          = watson_genes,
-  OrgDb         = org.Mm.eg.db,
-  keyType       = "ENSEMBL",
-  ont           = "CC",
-  pAdjustMethod = "BH",
-  pvalueCutoff  = 0.05,
-  qvalueCutoff  = 0.05,
-  minGSSize     = 10,
-  maxGSSize     = 500,
-  readable      = TRUE
-)
-
-write.csv(as.data.frame(GO_watson_CC), "GO_CC_Watson.csv", row.names = FALSE)
-dotplot(GO_watson_CC, showCategory = 20, title = "GO:CC Enrichment – Watson Strand")
-
-
-GO_crick_CC <- enrichGO(
-  gene          = crick_genes,
-  OrgDb         = org.Mm.eg.db,
-  keyType       = "ENSEMBL",
-  ont           = "CC",
-  pAdjustMethod = "BH",
-  pvalueCutoff  = 0.05,
-  qvalueCutoff  = 0.05,
-  minGSSize     = 10,
-  maxGSSize     = 500,
-  readable      = TRUE
-)
-
-write.csv(as.data.frame(GO_crick_CC), "GO_CC_Crick.csv", row.names = FALSE)
-dotplot(GO_crick_CC, showCategory = 20, title = "GO:CC Enrichment – Crick Strand")
-
-
-#--------- Creating Custom Background ----------
-expression_data <- read_csv("expression_dataset.csv")
-
-expression_data <- expression_data %>%
+expression_data <- read_csv("expression_dataset.csv") %>%
   distinct(ensembl_gene_id, .keep_all = TRUE)
 
+# Split into foreground and background gene sets
 control_pool <- expression_data %>%
   filter(!ensembl_gene_id %in% bdp_genes)
 
-#count(control_pool)
-#length(bdp_genes)
-#count(expression_data)
-
 foreground_metadata <- foreground_metadata %>%
   left_join(expression_data, by = c("ensembl_id" = "ensembl_gene_id")) %>%
-  filter(!is.na(gene_length) & !is.na(gene_biotype) & !is.na(baseMean)) %>%
+  filter(!is.na(gene_length) & !is.na(gene_biotype) & !is.na(baseMean))
+
+# Add set labels and combine
+combined <- bind_rows(
+  foreground_metadata %>% mutate(set = "foreground"),
+  control_pool %>% mutate(set = "background", ensembl_id = ensembl_gene_id)
+)
+
+# Universal binning across both sets
+combined <- combined %>%
   mutate(
     expression_bin = ntile(baseMean, 4),
     length_bin = ntile(gene_length, 4),
     biotype_bin = gene_biotype
   )
 
-control_pool <- control_pool %>%
-  mutate(
-    expression_bin = ifelse(is.na(baseMean), "missing", ntile(baseMean, 4)),
-    length_bin = ntile(gene_length, 4),
-    biotype_bin = gene_biotype
-  )
+# Split back into foreground and background
+foreground_metadata <- combined %>%
+  filter(set == "foreground") %>%
+  select(-set)
 
+control_pool <- combined %>%
+  filter(set == "background") %>%
+  select(-set)
+
+# Count foreground genes per bin
 bin_counts <- foreground_metadata %>%
-  group_by(biotype_bin, length_bin, expression_bin) %>%
-  summarise(n = n(), .groups = "drop")
+  count(biotype_bin, length_bin, expression_bin, name = "n")
 
+# Match background genes 1:1 by bin
 set.seed(42)
 matched_background <- bin_counts %>%
   group_by(biotype_bin, length_bin, expression_bin) %>%
@@ -255,7 +99,7 @@ matched_background <- bin_counts %>%
         length_bin == .y$length_bin,
         expression_bin == .y$expression_bin
       ) %>%
-      dplyr::select(-biotype_bin, -length_bin, -expression_bin)  #strip grouping cols
+      dplyr::select(ensembl_id, gene_biotype, gene_length, baseMean)
     
     if (nrow(candidates) >= .x$n[1]) {
       sample_n(candidates, .x$n[1])
@@ -265,24 +109,20 @@ matched_background <- bin_counts %>%
   }) %>%
   ungroup()
 
-#Quick check to see if there are any missmatches in the bins
+# --------- Validate bin matching ---------
 
 foreground_bins <- foreground_metadata %>%
   count(biotype_bin, length_bin, expression_bin, name = "foreground_count")
 
-# Count genes per bin in the matched background
 background_bins <- matched_background %>%
   count(gene_biotype, length_bin, expression_bin, name = "background_count") %>%
   rename(biotype_bin = gene_biotype)
 
-# Join and compare the two sets
 bin_comparison <- full_join(foreground_bins, background_bins,
                             by = c("biotype_bin", "length_bin", "expression_bin")) %>%
   mutate(match = foreground_count == background_count)
 
-# View the results
 print(bin_comparison)
-
 
 
 # A matched background set was generated by stratifying BDP-associated genes and non-BDP genes into bins based on gene biotype, expression quartiles, and length quartiles. One-to-one matching was performed for each bin, resulting in a background distribution identical to the foreground. No unmatched bins were detected.
@@ -296,16 +136,42 @@ write.csv(matched_background, "matched_background.csv", row.names = FALSE)
 
 #--------- Enrichment with Custom Background ----------
 #Need to map the new foreground IDs to symbols
-mapped_bdp <- bitr(foreground_metadata$ensembl_id, 
-                   fromType = "ENSEMBL", toType = "SYMBOL", OrgDb = org.Mm.eg.db)
-
-valid_bdp_symbols <- mapped_bdp$SYMBOL
-
-custom_valid_universe <- bitr(
-  union(foreground_metadata$ensembl_id, matched_background$ensembl_gene_id),
+mapped_foreground <- bitr(
+  foreground_metadata$ensembl_id,
   fromType = "ENSEMBL", toType = "SYMBOL", OrgDb = org.Mm.eg.db
-)$SYMBOL
+)
+#length(mapped_foreground$SYMBOL)
 
+# Map background too
+mapped_background <- bitr(
+  matched_background$ensembl_id,
+  fromType = "ENSEMBL", toType = "SYMBOL", OrgDb = org.Mm.eg.db
+)
+#length(mapped_background$SYMBOL)
+valid_bdp_symbols <- mapped_foreground$SYMBOL
+
+# Create combined valid universe
+custom_valid_universe <- union(
+  mapped_foreground$SYMBOL,
+  mapped_background$SYMBOL
+)
+
+#Default background
+GO_combined <- enrichGO(
+  gene          = valid_bdp_symbols,
+  universe      = keys(org.Mm.eg.db, keytype = "SYMBOL"),
+  OrgDb         = org.Mm.eg.db,
+  keyType       = "SYMBOL",
+  ont           = "BP",
+  pAdjustMethod = "BH",
+  pvalueCutoff  = 0.05,
+  qvalueCutoff  = 0.05,
+  readable      = TRUE
+)
+
+write.csv(as.data.frame(GO_combined), "GO_BP_combined.csv", row.names = FALSE)
+
+#Custom Background
 GO_combined_custom <- enrichGO(
   gene          = valid_bdp_symbols,
   universe      = custom_valid_universe,
