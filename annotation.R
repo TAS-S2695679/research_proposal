@@ -171,10 +171,37 @@ bdp_annotated <- bdp_annotated %>%
   left_join(crick_gencode, by = "crick_transcript_id")
 
 # --------------------------- Step 9: Final Column Ordering -------------------
+# Drop deprecated rescue columns
+bdp_annotated <- bdp_annotated %>%
+  dplyr::select(-ends_with("_rescued"))
+
+# Define core BDP metadata columns
 core_cols <- c("BDP_ID", "Chromosome", "watson_start", "watson_end", "crick_start", "crick_end")
-watson_cols <- names(bdp_annotated)[startsWith(names(bdp_annotated), "watson_") & !(names(bdp_annotated) %in% core_cols)]
-crick_cols <- names(bdp_annotated)[startsWith(names(bdp_annotated), "crick_") & !(names(bdp_annotated) %in% core_cols)]
-ordered_cols <- c(core_cols, sort(watson_cols), sort(crick_cols))
+
+# Define logical ordering for Watson strand
+watson_cols <- c(
+  "watson_ensembl_id", "watson_gene_name_updated", "watson_gene_name",
+  "watson_biotype", "watson_biotype_gencode", "watson_length",
+  "watson_description", "watson_keyword",
+  "watson_appris", "watson_canonical", "watson_gencode_basic",
+  "watson_refseq", "watson_transcript_id", "watson_tsl",
+  "watson_uniprot", "watson_rnacentral_id"
+)
+
+# Define logical ordering for Crick strand
+crick_cols <- c(
+  "crick_ensembl_id", "crick_gene_name_updated", "crick_gene_name",
+  "crick_biotype", "crick_biotype_gencode", "crick_length",
+  "crick_description", "crick_keyword",
+  "crick_appris", "crick_canonical", "crick_gencode_basic",
+  "crick_refseq", "crick_transcript_id", "crick_tsl",
+  "crick_uniprot", "crick_rnacentral_id"
+)
+
+# Combine into final ordered structure
+ordered_cols <- c(core_cols, watson_cols, crick_cols)
+
+# Subset and reorder the dataset
 bdp_annotated <- bdp_annotated[, ordered_cols]
 
 # --------------------------- Step 10: Export Final Dataset -------------------

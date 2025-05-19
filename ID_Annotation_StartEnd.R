@@ -4,7 +4,7 @@ library(readr)
 
 # Load and clean dataset
 bdp <- read_csv("BDP_Cleaned_Pairs.csv") %>%
-  mutate(Chromosome = gsub("^chr", "", Chromosome))  # standardize chromosome format
+  mutate(Chromosome = gsub("^chr", "", Chromosome))  # standardise chromosome format
 
 # Set up Ensembl BioMart
 ensembl <- useEnsembl(biomart = "genes", dataset = "mmusculus_gene_ensembl")

@@ -6,8 +6,11 @@ if (!requireNamespace("org.Mm.eg.db", quietly = TRUE)) {
 if (!requireNamespace("clusterProfiler", quietly = TRUE)) {
   BiocManager::install("clusterProfiler")
 }
+if (!require("BiocManager", quietly = TRUE)) 
+  install.packages("BiocManager")
+BiocManager::install("ReactomePA")
 
-
+library(ReactomePA)
 library(clusterProfiler)
 library(org.Mm.eg.db)
 library(AnnotationDbi)
@@ -22,13 +25,13 @@ bdp <- read_csv("BDP_Fully_Annotated.csv")
 bdp <- read_csv("BDP_Fully_Annotated.csv")
 
 watson_meta <- bdp %>%
-  select(watson_ensembl_id, watson_biotype, watson_length) %>%
+  dplyr::select(watson_ensembl_id, watson_biotype, watson_length) %>%
   rename(ensembl_id = watson_ensembl_id,
          biotype = watson_biotype,
          length = watson_length)
 
 crick_meta <- bdp %>%
-  select(crick_ensembl_id, crick_biotype, crick_length) %>%
+  dplyr::select(crick_ensembl_id, crick_biotype, crick_length) %>%
   rename(ensembl_id = crick_ensembl_id,
          biotype = crick_biotype,
          length = crick_length)
@@ -78,11 +81,11 @@ combined <- combined %>%
 # Split back into foreground and background
 foreground_metadata <- combined %>%
   filter(set == "foreground") %>%
-  select(-set)
+  dplyr::select(-set)
 
 control_pool <- combined %>%
   filter(set == "background") %>%
-  select(-set)
+  dplyr::select(-set)
 
 # Count foreground genes per bin
 bin_counts <- foreground_metadata %>%
@@ -135,7 +138,7 @@ write.csv(matched_background, "matched_background.csv", row.names = FALSE)
 
 
 #--------- Enrichment with Custom Background ----------
-#Need to map the new foreground IDs to symbols
+#Need to map the new foreground IDs to symbols using org.Mm.eg.db to ensure they are up-to-date.
 mapped_foreground <- bitr(
   foreground_metadata$ensembl_id,
   fromType = "ENSEMBL", toType = "SYMBOL", OrgDb = org.Mm.eg.db
@@ -186,6 +189,74 @@ GO_combined_custom <- enrichGO(
 
 write.csv(as.data.frame(GO_combined_custom), "GO_combined_custom.csv", row.names = FALSE)
 
+
+GO_MF_custom <- enrichGO(
+  gene          = valid_bdp_symbols,
+  universe      = custom_valid_universe,
+  OrgDb         = org.Mm.eg.db,
+  keyType       = "SYMBOL",
+  ont           = "MF",
+  pAdjustMethod = "BH",
+  pvalueCutoff  = 0.05,
+  qvalueCutoff  = 0.05,
+  readable      = TRUE
+)
+
+write.csv(as.data.frame(GO_MF_custom), "GO_MF_custom.csv", row.names = FALSE)
+
+
+GO_CC_custom <- enrichGO(
+  gene          = valid_bdp_symbols,
+  universe      = custom_valid_universe,
+  OrgDb         = org.Mm.eg.db,
+  keyType       = "SYMBOL",
+  ont           = "CC",
+  pAdjustMethod = "BH",
+  pvalueCutoff  = 0.05,
+  qvalueCutoff  = 0.05,
+  readable      = TRUE
+)
+
+write.csv(as.data.frame(GO_CC_custom), "GO_CC_custom.csv", row.names = FALSE)
+
+#Map foreground to Entrez IDs
+mapped_entrez <- bitr(
+  foreground_metadata$ensembl_id,
+  fromType = "ENSEMBL",
+  toType = "ENTREZID",
+  OrgDb = org.Mm.eg.db
+)
+
+mapped_bg_entrez <- bitr(
+  custom_valid_universe,
+  fromType = "SYMBOL",
+  toType = "ENTREZID",
+  OrgDb = org.Mm.eg.db
+)
+
+bg_entrez_ids <- mapped_bg_entrez$ENTREZID
+entrez_ids <- mapped_entrez$ENTREZI
+
+kegg_enrich <- enrichKEGG(
+  gene         = entrez_ids,
+  universe     = bg_entrez_ids,
+  organism     = "mmu",
+  keyType      = "kegg",
+  pvalueCutoff = 0.05
+)
+
+write.csv(as.data.frame(kegg_enrich), "kegg_enrich.csv", row.names = FALSE)
+
+
+reactome_enrich <- enrichPathway(
+  gene         = entrez_ids,
+  universe     = bg_entrez_ids,
+  organism     = "mouse",
+  pvalueCutoff = 0.05,
+  readable     = TRUE
+)
+
+write.csv(as.data.frame(reactome_enrich), "reactome_enrich.csv", row.names = FALSE)
 
 #--------- Complementary Analysis Using gProfiler to Highlight LncRNA ----------
 #As 26 lncRNA genes were dropped to form the custom_valid universe, leaving us only with 

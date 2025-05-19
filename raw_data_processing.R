@@ -36,7 +36,7 @@ expr_mapped <- expr_raw %>%
 head(expr_mapped)
 
 expression_data <- expr_mapped %>%
-  select(ensembl_gene_id, baseMean, gene_length = Size) %>%
+  dplyr::select(ensembl_gene_id, baseMean, gene_length = Size) %>%
   distinct()
 
 biotypes <- getBM(
