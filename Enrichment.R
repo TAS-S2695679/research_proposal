@@ -259,5 +259,48 @@ reactome_enrich <- enrichPathway(
 write.csv(as.data.frame(reactome_enrich), "reactome_enrich.csv", row.names = FALSE)
 
 #--------- Complementary Analysis Using gProfiler to Highlight LncRNA ----------
-#As 26 lncRNA genes were dropped to form the custom_valid universe, leaving us only with 
+#As 26 lncRNA genes were dropped to form the custom_valid universe, leaving us only with...
 
+all_genes <- unique(foreground_metadata$ensembl_id)
+
+# Non-protein-coding genes only
+non_protein_coding_genes <- foreground_metadata %>%
+  filter(biotype != "protein_coding") %>%
+  pull(ensembl_id) %>%
+  unique()
+
+cat("All BDP genes:", length(all_genes), "\n")
+cat("Non-protein-coding BDP genes:", length(non_protein_coding_genes), "\n")
+
+
+#------------------ Run gProfiler: All BDP Genes ------------------
+gost_all <- gost(
+  query = all_genes,
+  organism = "mmusculus",
+  sources = c("GO:BP", "GO:MF", "GO:CC", "REAC", "KEGG", "TRANSFAC", "TF", "MIRNA"),
+  correction_method = "fdr",
+  evcodes = FALSE
+)
+
+flat_result <- gost_all$result %>%
+  dplyr::select(-parents)  # or use purrr::map_chr if you want to keep them
+
+# Write to CSV
+write.csv(flat_result, "gprofiler_coding.csv", row.names = FALSE)
+
+# ------------------ Run gProfiler: Non-Protein-Coding Only ------------------
+
+gost_non_pc <- gost(
+  query = non_protein_coding_genes,
+  organism = "mmusculus",
+  sources = c("GO:BP", "TF", "MIRNA"),
+  correction_method = "fdr",
+  evcodes = FALSE,
+  significant=FALSE
+)
+
+flat_result <- gost_non_pc$result %>%
+  dplyr::select(-parents)  # or use purrr::map_chr if you want to keep them
+
+# Write to CSV
+write.csv(flat_result, "gprofiler_non_protein_coding.csv", row.names = FALSE)
