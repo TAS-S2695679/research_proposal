@@ -53,17 +53,19 @@ top_go_dot <- go_bp %>%
 
 # Plot manually with ggplot2
 pdf("outputs/enrichment/go_dotplot.pdf", width = 8, height = 6)
-ggplot(top_go_dot, aes(x = GeneRatio, y = Description)) +
-  geom_point(aes(size = Count, color = logFDR)) +
-  scale_color_viridis_c(option = "D") +
-  labs(
-    title = "GO:BP Dot Plot (Top 10 Enriched Terms)",
-    x = "Gene Ratio",
-    y = "",
-    color = "-log10(FDR)",
-    size = "Gene Count"
-  ) +
-  theme_minimal(base_size = 12)
+print(
+  ggplot(top_go_dot, aes(x = GeneRatio, y = Description)) +
+    geom_point(aes(size = Count, color = logFDR)) +
+    scale_color_viridis_c(option = "D") +
+    labs(
+      title = "GO:BP Dot Plot (Top 10 Enriched Terms)",
+      x = "Gene Ratio",
+      y = "",
+      color = "-log10(FDR)",
+      size = "Gene Count"
+    ) +
+    theme_minimal(base_size = 12)
+)
 dev.off()
 
 # -------------------- Output 4: KEGG & Reactome Tables --------------------
@@ -101,3 +103,58 @@ summary_stats <- tibble(
 
 write_csv(summary_stats, "outputs/enrichment/enrichment_summary_stats.csv")
 print(summary_stats)
+
+
+
+# -------------------- Default Bakcground Outputs --------------------
+go_default <- read_csv("GO_BP_combined.csv")
+
+# -------------------- Output A: Top 10 Table --------------------
+top_go_default <- go_default %>%
+  arrange(p.adjust) %>%
+  dplyr::select(ID, Description, p.adjust, Count, geneID) %>%
+  slice(1:10)
+
+# Write table
+write_csv(top_go_default, "outputs/enrichment/top_GO_terms_table_default.csv")
+print(top_go_default)
+
+# -------------------- Output B: Bar Plot --------------------
+top_go_bar <- top_go_default %>%
+  mutate(Description = fct_reorder(Description, -log10(p.adjust)))
+
+pdf("outputs/enrichment/go_barplot_default.pdf", width = 8, height = 5)
+print(
+  ggplot(top_go_bar, aes(x = Description, y = -log10(p.adjust))) +
+    geom_col(fill = "steelblue") +
+    coord_flip() +
+    labs(title = "Top GO:BP Terms (Default Background)", x = "", y = "-log10(FDR)") +
+    theme_minimal(base_size = 12)
+)
+dev.off()
+
+# -------------------- Output C: Dot Plot --------------------
+top_go_dot <- go_default %>%
+  arrange(p.adjust) %>%
+  slice(1:10) %>%
+  mutate(
+    Description = fct_reorder(Description, -p.adjust),
+    logFDR = -log10(p.adjust),
+    GeneRatio = Count / as.numeric(str_extract(BgRatio, "\\d+$"))  # e.g. from 68/3966
+  )
+
+pdf("outputs/enrichment/go_dotplot_default.pdf", width = 8, height = 6)
+print(
+  ggplot(top_go_dot, aes(x = GeneRatio, y = Description)) +
+    geom_point(aes(size = Count, color = logFDR)) +
+    scale_color_viridis_c(option = "D") +
+    labs(
+      title = "GO:BP Dot Plot (Default Background)",
+      x = "Gene Ratio",
+      y = "",
+      color = "-log10(FDR)",
+      size = "Gene Count"
+    ) +
+    theme_minimal(base_size = 12)
+)
+dev.off()

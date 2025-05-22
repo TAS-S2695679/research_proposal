@@ -139,6 +139,7 @@ write.csv(matched_background, "matched_background.csv", row.names = FALSE)
 
 #--------- Enrichment with Custom Background ----------
 #Need to map the new foreground IDs to symbols using org.Mm.eg.db to ensure they are up-to-date.
+
 mapped_foreground <- bitr(
   foreground_metadata$ensembl_id,
   fromType = "ENSEMBL", toType = "SYMBOL", OrgDb = org.Mm.eg.db

@@ -44,7 +44,7 @@ biotype_summary <- enriched_genes %>%
 print(biotype_summary)
 write_csv(biotype_summary, "outputs/enrichment/enrichment_biotype_summary.csv")
 
-# ----------------------- Optional: Bar Plot -------------------
+# ----------------------- Bar Plot -------------------
 ggplot(biotype_summary, aes(x = reorder(biotype, -n), y = percent)) +
   geom_bar(stat = "identity", fill = "steelblue") +
   labs(
