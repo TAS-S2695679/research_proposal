@@ -1,6 +1,6 @@
 library(tidyverse)
 library(readr)
-
+library(ggplot2)
 # ----------------------- Load Data ----------------------------
 enrich<- read_csv("GO_combined_custom.csv")
 bdp <- read_csv("BDP_Fully_Annotated.csv")
@@ -53,3 +53,14 @@ ggplot(biotype_summary, aes(x = reorder(biotype, -n), y = percent)) +
     y = "Percentage"
   ) +
   theme_minimal()
+
+# ----------------------- Evaluate whether gene lengths should be included? -------------------
+ggsave("outputs/gene_length_distribution.png", 
+       plot = ggplot(combined, aes(x = gene_length, fill = set)) +
+         geom_density(alpha = 0.5) +
+         scale_x_log10() +
+         labs(title = "Gene Length Distribution: Foreground vs Background",
+              x = "Gene Length (log10)",
+              y = "Density") +
+         theme_minimal(),
+       width = 8, height = 5, dpi = 300)

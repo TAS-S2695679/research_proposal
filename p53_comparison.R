@@ -94,7 +94,7 @@ repressed_result <- run_fisher_test(bdp_genes, p53_repressed, expressed_genes)
 summary_df <- tibble(
   Set = c("p53 Activated", "p53 Repressed"),
   Overlap_with_BDPs = c(activated_result$count_BDP_overlap, repressed_result$count_BDP_overlap),
-  Total_BDP_genes = length(bdp_genes),
+  Total_Expressed_BDP_genes = length(bdp_genes), # Only BDP genes found in the expressed gene universe (after BioMart mapping)
   Total_p53_targets = c(length(p53_activated), length(p53_repressed)),
   Odds_Ratio = c(activated_result$odds_ratio, repressed_result$odds_ratio),
   P_Value = c(activated_result$p_value, repressed_result$p_value)
