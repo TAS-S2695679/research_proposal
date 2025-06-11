@@ -2,7 +2,8 @@
 library(dplyr)
 library(readr)
 library(tibble)
-
+library(tidyr)
+library(stringr)
 # ------------------ Load Data ------------------
 
 # Full set of expressed genes
@@ -103,3 +104,131 @@ summary_df <- tibble(
 print(summary_df)
 
 write_csv(summary_df, "outputs/p53_comparison/summary.csv")
+
+
+
+# ------------------ Break Down p53 Hits in Reactome Output ------------------
+# Reactome enrichment output
+reactome <- read_csv("reactome_enrich.csv")
+
+# Filter for TP53-related terms
+p53_terms <- reactome %>%
+  filter(str_detect(Description, "TP53"))
+
+# Fully annotated BDP catalogue
+bdp <- read_csv("BDP_Fully_Annotated.csv")
+
+# ------------------ Prepare Long-Format BDP Metadata ------------------
+
+# Watson strand genes
+watson <- bdp %>%
+  transmute(
+    gene = toupper(watson_gene_name),
+    ensembl_id = watson_ensembl_id,
+    biotype = watson_biotype,
+    strand = "Watson"
+  )
+
+# Crick strand genes
+crick <- bdp %>%
+  transmute(
+    gene = toupper(crick_gene_name),
+    ensembl_id = crick_ensembl_id,
+    biotype = crick_biotype,
+    strand = "Crick"
+  )
+
+# Combine both strands
+bdp_long <- bind_rows(watson, crick) %>%
+  filter(!is.na(gene) & gene != "")
+
+# ------------------ Match Reactome Genes to BDPs ------------------
+
+# Parse and annotate p53 pathway genes
+p53_hits <- list()
+
+for (i in seq_len(nrow(p53_terms))) {
+  pathway_name <- p53_terms$Description[i]
+  pathway_id <- p53_terms$ID[i]
+  gene_list <- str_split(p53_terms$geneID[i], pattern = "/", simplify = TRUE)[1, ]
+  gene_list <- toupper(gene_list)
+  
+  matched <- bdp_long %>%
+    filter(gene %in% gene_list) %>%
+    mutate(
+      Reactome_Term = pathway_name,
+      Reactome_ID = pathway_id
+    )
+  
+  p53_hits[[i]] <- matched
+}
+
+# Combine all results
+p53_annotated_hits <- bind_rows(p53_hits)
+
+# ------------------ Export or View ------------------
+print(p53_annotated_hits)
+
+write_csv(p53_annotated_hits, "p53_BDP_reactome_hits.csv")
+
+
+p53_hits <- read_csv("p53_BDP_reactome_hits.csv")
+
+# ------------------ Biotype Summary ------------------
+biotype_summary <- p53_hits %>%
+  count(biotype, sort = TRUE)
+
+print("Summary of Biotypes in p53-Associated BDP Genes:")
+print(biotype_summary)
+
+# ------------------ Extract Coordination Annotations ------------------
+coord_data <- read_csv("BDP_coordination_results.csv")
+# Watson strand mapping
+watson_status <- coord_data %>%
+  dplyr::select(watson_ensembl_id, brg1_coordination, oct4_coordination) %>%
+  rename(
+    ensembl_id = watson_ensembl_id,
+    brg1_sync = brg1_coordination,
+    oct4_sync = oct4_coordination
+  )
+
+# Crick strand mapping
+crick_status <- coord_data %>%
+  dplyr::select(crick_ensembl_id, brg1_coordination, oct4_coordination) %>%
+  rename(
+    ensembl_id = crick_ensembl_id,
+    brg1_sync = brg1_coordination,
+    oct4_sync = oct4_coordination
+  )
+
+# Combine and continue with joining to p53 hits as before
+sync_status_long <- bind_rows(watson_status, crick_status) %>%
+  filter(!is.na(ensembl_id)) %>%
+  distinct()
+
+# ------------------ Join with p53 Hit Table ------------------
+p53_hits_annotated <- p53_hits %>%
+  left_join(sync_status_long, by = "ensembl_id")
+
+# ------------------ Summarise Results ------------------
+
+# Brg1 summary
+brg1_summary <- p53_hits_annotated %>%
+  count(brg1_sync, sort = TRUE) %>%
+  rename(BRG1_Coordination = brg1_sync, Count = n)
+
+# Oct4 summary
+oct4_summary <- p53_hits_annotated %>%
+  count(oct4_sync, sort = TRUE) %>%
+  rename(Oct4_Coordination = oct4_sync, Count = n)
+
+# ------------------ Output ------------------
+print("Coordination of p53-BDP Genes under BRG1 depletion:")
+print(brg1_summary)
+
+print("Coordination of p53-BDP Genes under OCT4 depletion:")
+print(oct4_summary)
+
+write_csv(p53_hits_annotated, "outputs/p53_hits_with_coordination.csv")
+write_csv(brg1_summary, "outputs/p53_brg1_coordination_summary.csv")
+write_csv(oct4_summary, "outputs/p53_oct4_coordination_summary.csv")

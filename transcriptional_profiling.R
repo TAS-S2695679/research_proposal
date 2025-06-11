@@ -122,3 +122,11 @@ bdp_expr <- bdp %>%
 
 table(bdp_expr$brg1_coordination)
 table(bdp_expr$oct4_coordination)
+
+
+bdp_expr_export <- bdp_expr %>%
+  dplyr::select(BDP_ID,
+         watson_ensembl_id, crick_ensembl_id,
+         brg1_coordination, oct4_coordination)
+
+write_csv(bdp_expr_export, "BDP_coordination_results.csv")

@@ -17,6 +17,7 @@ library(AnnotationDbi)
 library(dplyr)
 library(readr)
 library(gprofiler2)
+library(tidyr)
 
 #--------- Foreground Setups for Both Strands and Meta Data ----------
 bdp <- read_csv("BDP_Fully_Annotated.csv")
@@ -38,7 +39,8 @@ crick_meta <- bdp %>%
 
 foreground_metadata <- bind_rows(watson_meta, crick_meta) %>%
   filter(!is.na(ensembl_id)) %>%
-  distinct()
+  distinct() %>%
+  rename(gene_length = length)
 
 bdp_genes <- foreground_metadata$ensembl_id
 
@@ -69,6 +71,13 @@ control_pool <- expression_data %>%
 
 foreground_metadata <- foreground_metadata %>%
   left_join(expression_data, by = c("ensembl_id" = "ensembl_gene_id")) %>%
+  mutate(
+    # Combine length columns (prefer expression_data's if available)
+    gene_length = coalesce(gene_length.y, gene_length.x),
+    # Same for biotype
+    gene_biotype = coalesce(gene_biotype, biotype)
+  ) %>%
+  select(-gene_length.x, -gene_length.y, -biotype) %>%  # Remove duplicate columns
   filter(!is.na(gene_length) & !is.na(gene_biotype) & !is.na(baseMean))
 
 # Add set labels and combine
@@ -268,7 +277,7 @@ all_genes <- unique(foreground_metadata$ensembl_id)
 
 # Non-protein-coding genes only
 non_protein_coding_genes <- foreground_metadata %>%
-  filter(biotype != "protein_coding") %>%
+  filter(gene_biotype != "protein_coding") %>%
   pull(ensembl_id) %>%
   unique()
 
@@ -304,6 +313,6 @@ gost_non_pc <- gost(
 
 flat_result <- gost_non_pc$result %>%
   dplyr::select(-parents)  # or use purrr::map_chr if you want to keep them
-
+q
 # Write to CSV
 write.csv(flat_result, "gprofiler_non_protein_coding.csv", row.names = FALSE)
