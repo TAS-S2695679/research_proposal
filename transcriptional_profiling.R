@@ -1,5 +1,6 @@
 library(dplyr)
 library(biomaRt)
+library(readr)
 
 brg1_results <- read.delim("data/GSE87821_BRG1fl.nucRNAseq.DESeq2_Results.txt.gz", sep = ",", header = TRUE)
 oct4_results <- read.delim("data/GSE87821_ZHBTC4.nucRNAseq.DESeq2_Results.txt.gz", sep = ",", header = TRUE)
@@ -130,3 +131,25 @@ bdp_expr_export <- bdp_expr %>%
          brg1_coordination, oct4_coordination)
 
 write_csv(bdp_expr_export, "BDP_coordination_results.csv")
+
+
+# ------------------ Coordination Summary ------------------
+
+# BRG1 coordination counts
+brg1_summary <- bdp_expr %>%
+  count(brg1_coordination, sort = TRUE) %>%
+  rename(Category = brg1_coordination, Count = n)
+
+# OCT4 coordination counts
+oct4_summary <- bdp_expr %>%
+  count(oct4_coordination, sort = TRUE) %>%
+  rename(Category = oct4_coordination, Count = n)
+
+# Print summaries
+cat("BRG1 Coordination Summary:\n")
+print(brg1_summary)
+
+cat("\nOCT4 Coordination Summary:\n")
+print(oct4_summary)
+
+oct4_results %>% filter(ensembl_gene_id == "ENSMUSG00000059552") %>% dplyr::select(oct4_log2fc, oct4_padj)

@@ -166,16 +166,20 @@ for (i in seq_len(nrow(p53_terms))) {
 # Combine all results
 p53_annotated_hits <- bind_rows(p53_hits)
 
+# ------------------ Make Unique Gene List ------------------
+p53_annotated_hits_unique <- p53_annotated_hits %>%
+  distinct(gene, .keep_all = TRUE)
+
 # ------------------ Export or View ------------------
 print(p53_annotated_hits)
+print(p53_annotated_hits_unique)
+write_csv(p53_annotated_hits, "outputs/p53_BDP_reactome_hits.csv")
+write_csv(p53_annotated_hits_unique, "outputs/p53_BDP_reactome_hits_unique.csv")
 
-write_csv(p53_annotated_hits, "p53_BDP_reactome_hits.csv")
 
-
-p53_hits <- read_csv("p53_BDP_reactome_hits.csv")
 
 # ------------------ Biotype Summary ------------------
-biotype_summary <- p53_hits %>%
+biotype_summary <- p53_annotated_hits_unique %>%
   count(biotype, sort = TRUE)
 
 print("Summary of Biotypes in p53-Associated BDP Genes:")
@@ -207,7 +211,7 @@ sync_status_long <- bind_rows(watson_status, crick_status) %>%
   distinct()
 
 # ------------------ Join with p53 Hit Table ------------------
-p53_hits_annotated <- p53_hits %>%
+p53_hits_annotated <- p53_annotated_hits_unique %>%
   left_join(sync_status_long, by = "ensembl_id")
 
 # ------------------ Summarise Results ------------------
@@ -232,3 +236,9 @@ print(oct4_summary)
 write_csv(p53_hits_annotated, "outputs/p53_hits_with_coordination.csv")
 write_csv(brg1_summary, "outputs/p53_brg1_coordination_summary.csv")
 write_csv(oct4_summary, "outputs/p53_oct4_coordination_summary.csv")
+
+
+
+asymmetric_hits <- p53_hits_annotated %>%
+  filter(oct4_sync == "Asymmetric")
+print(asymmetric_hits)
