@@ -346,6 +346,5 @@ gost_non_pc <- gost(
 
 flat_result <- gost_non_pc$result %>%
   dplyr::select(-parents)  # or use purrr::map_chr if you want to keep them
-q
 # Write to CSV
 write.csv(flat_result, "gprofiler_non_protein_coding.csv", row.names = FALSE)

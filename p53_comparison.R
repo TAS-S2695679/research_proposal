@@ -4,6 +4,7 @@ library(readr)
 library(tibble)
 library(tidyr)
 library(stringr)
+library(biomaRt)
 # ------------------ Load Data ------------------
 
 # Full set of expressed genes
@@ -242,3 +243,74 @@ write_csv(oct4_summary, "outputs/p53_oct4_coordination_summary.csv")
 asymmetric_hits <- p53_hits_annotated %>%
   filter(oct4_sync == "Asymmetric")
 print(asymmetric_hits)
+
+bdp <- read_csv("BDP_Fully_Annotated.csv")
+asymmetric_matches <- asymmetric_hits %>%
+  left_join(bdp, by = c("ensembl_id" = "watson_ensembl_id")) %>%
+  mutate(partner_ensembl = crick_ensembl_id,
+         partner_symbol = crick_gene_name) %>%
+  bind_rows(
+    asymmetric_hits %>%
+      left_join(bdp, by = c("ensembl_id" = "crick_ensembl_id")) %>%
+      mutate(partner_ensembl = watson_ensembl_id,
+             partner_symbol = watson_gene_name)
+  ) %>%
+  filter(!is.na(partner_ensembl)) %>%
+  dplyr::select(gene, ensembl_id, strand, partner_symbol, partner_ensembl)
+
+print(asymmetric_matches)
+
+
+genes_to_check <- c("ENSMUSG00000025358",  # Cdk2
+                    "ENSMUSG00000025359",  # Pmel
+                    "ENSMUSG00000064128",  # Cenpj
+                    "ENSMUSG00000054507")  # Parp4
+
+oct4_clean %>%
+  filter(ensembl_gene_id %in% genes_to_check) %>%
+  dplyr::select(ensembl_gene_id, oct4_log2fc, oct4_padj)
+
+# ------------------ Sanity Check: Verify Classification ------------------
+
+# Helper: assess if gene is significantly changed
+is_significant <- function(log2fc, padj, threshold = 0.58, pval_cutoff = 0.05) {
+  !is.na(log2fc) && !is.na(padj) && abs(log2fc) > threshold && padj < pval_cutoff
+}
+
+# Add flags for significance
+bdp_checked <- bdp_expr %>%
+  mutate(
+    watson_sig = mapply(is_significant, oct4_watson_log2fc, oct4_watson_padj),
+    crick_sig  = mapply(is_significant, oct4_crick_log2fc, oct4_crick_padj)
+  )
+
+# Filter cases where classification ≠ what the data actually shows
+bdp_mismatch <- bdp_checked %>%
+  mutate(
+    expected = case_when(
+      watson_sig & crick_sig &
+        sign(oct4_watson_log2fc) == sign(oct4_crick_log2fc) ~ "Synchronised",
+      watson_sig & crick_sig &
+        sign(oct4_watson_log2fc) != sign(oct4_crick_log2fc) ~ "Opposite",
+      xor(watson_sig, crick_sig) ~ "Asymmetric",
+      TRUE ~ "Unchanged"
+    )
+  ) %>%
+  filter(oct4_coordination != expected) %>%
+  dplyr::select(BDP_ID,
+                watson_ensembl_id, crick_ensembl_id,
+                oct4_watson_log2fc, oct4_crick_log2fc,
+                oct4_watson_padj, oct4_crick_padj,
+                oct4_coordination, expected)
+
+
+
+# CDK2 and PMEL
+oct4_clean %>%
+  filter(ensembl_gene_id %in% c("ENSMUSG00000025358", "ENSMUSG00000025359")) %>%
+  select(ensembl_gene_id, oct4_log2fc, oct4_padj)
+
+# CENPJ and PARP4
+oct4_clean %>%
+  filter(ensembl_gene_id %in% c("ENSMUSG00000064128", "ENSMUSG00000054509")) %>%
+  select(ensembl_gene_id, oct4_log2fc, oct4_padj)

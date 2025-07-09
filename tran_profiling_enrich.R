@@ -1,63 +1,47 @@
-# ---- Load packages ----
 library(dplyr)
-library(readr)
-library(tidyr)
 library(clusterProfiler)
 library(org.Mm.eg.db)
-library(AnnotationDbi)
 
-# ---- Load data ----
-bdp <- read_csv("BDP_Fully_Annotated.csv")
-coord <- read_csv("BDP_coordination_results.csv")
+genes_by_class <- bdp_expr %>%
+  dplyr::select(oct4_coordination, watson_ensembl_id, crick_ensembl_id) %>%
+  pivot_longer(cols = c(watson_ensembl_id, crick_ensembl_id), values_to = "ensembl_id") %>%
+  filter(!is.na(ensembl_id)) %>%
+  distinct() %>%
+  group_by(oct4_coordination) %>%
+  summarise(gene_ids = list(unique(ensembl_id)))
 
-# ---- Join and reshape gene lists per category ----
-bdp_long <- bdp %>%
-  dplyr::select(BDP_ID, watson_ensembl_id, crick_ensembl_id)
-
-# Merge coordination class from Oct4 results
-bdp_classified <- coord %>%
-  pivot_longer(cols = c(watson_ensembl_id, crick_ensembl_id),
-               names_to = "strand", values_to = "ensembl_id") %>%
-  filter(!is.na(ensembl_id))
-
-
-# ---- Define categories ----
-categories <- unique(bdp_classified$oct4_coordination)
-
-# ---- Map Ensembl IDs to SYMBOLs ----
-all_ids <- unique(bdp_classified$ensembl_id)
-mapped_genes <- bitr(all_ids, fromType = "ENSEMBL", toType = "SYMBOL", OrgDb = org.Mm.eg.db)
-
-# ---- Run enrichment per category ----
-for (cat in categories) {
-  cat("\n🔍 Enriching category:", cat, "\n")
-  
-  # Get genes in this category
-  gene_set <- bdp_classified %>%
-    filter(oct4_coordination == cat) %>%
-    pull(ensembl_id) %>%
-    unique()
-  
-  # Map to gene symbols
-  gene_symbols <- mapped_genes %>%
-    filter(ENSEMBL %in% gene_set) %>%
-    pull(SYMBOL)
-  
-  if (length(gene_symbols) >= 10) {
-    enrich_res <- enrichGO(
-      gene          = gene_symbols,
-      OrgDb         = org.Mm.eg.db,
-      keyType       = "SYMBOL",
-      ont           = "BP",
-      pAdjustMethod = "BH",
-      pvalueCutoff  = 0.05,
-      readable      = TRUE
-    )
-    
-    out_file <- paste0("GO_BP_enrichment_", cat, ".csv")
-    write.csv(as.data.frame(enrich_res), out_file, row.names = FALSE)
-    cat("✅ Saved to:", out_file, "\n")
-  } else {
-    cat("⚠️  Skipping", cat, "- not enough genes for enrichment.\n")
-  }
+run_enrichment <- function(genes) {
+  enrichGO(
+    gene         = genes,
+    OrgDb        = org.Mm.eg.db,
+    keyType      = "ENSEMBL",
+    ont          = "MF",
+    pAdjustMethod = "BH",
+    pvalueCutoff  = 0.05,
+    qvalueCutoff  = 0.2,
+    readable      = TRUE
+  )
 }
+
+enrichment_results <- lapply(setNames(genes_by_class$gene_ids, genes_by_class$oct4_coordination), run_enrichment)
+dotplot(enrichment_results[["Synchronised"]], showCategory = 20, title = "GO BP Enrichment in Oct4-Synchronised BDPs")
+s
+write.csv(as.data.frame(enrichment_results[["Synchronised"]]), "oct4_synchronised_GO.csv")
+
+oct4_sync_genes <- bdp_expr %>%
+  filter(oct4_coordination == "Synchronised") %>%
+  dplyr::select(watson_ensembl_id, crick_ensembl_id) %>%
+  pivot_longer(everything(), values_to = "ensembl_id") %>%
+  distinct(ensembl_id) %>%
+  filter(!is.na(ensembl_id)) %>%
+  pull(ensembl_id)
+
+entrez_ids <- bitr(oct4_sync_genes, fromType = "ENSEMBL", toType = "ENTREZID", OrgDb = org.Mm.eg.db)
+kegg_results <- enrichKEGG(
+  gene = entrez_ids$ENTREZID,
+  organism = 'mmu',
+  pvalueCutoff = 0.05,
+  qvalueCutoff = 0.2
+)
+
+head(kegg_results)

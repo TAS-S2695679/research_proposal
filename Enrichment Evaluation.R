@@ -136,7 +136,7 @@ enrich_result <- enrichGO(
   gene = background_short$ensembl_id,
   OrgDb = "org.Mm.eg.db",
   keyType = "ENSEMBL",
-  ont = "BP"  # Biological Process
+  ont = "BP"
 )
 dotplot(enrich_result)
 

@@ -1,6 +1,7 @@
 library(dplyr)
 library(biomaRt)
 library(readr)
+library(ggplot2)
 
 brg1_results <- read.delim("data/GSE87821_BRG1fl.nucRNAseq.DESeq2_Results.txt.gz", sep = ",", header = TRUE)
 oct4_results <- read.delim("data/GSE87821_ZHBTC4.nucRNAseq.DESeq2_Results.txt.gz", sep = ",", header = TRUE)
@@ -77,16 +78,31 @@ bdp_expr <- bdp %>%
       rename(crick_ensembl_id = ensembl_gene_id),
     by = "crick_ensembl_id"
   ) %>%
-  rename(crick_log2fc = brg1_log2fc, crick_padj = brg1_padj) %>%
+  rename(crick_log2fc = brg1_log2fc, crick_padj = brg1_padj)
   
   # Step 2: Classify BRG1 coordination
+  
+  bdp_expr <- bdp_expr %>%
+  mutate(
+    watson_brg1_sig = !is.na(watson_log2fc) & !is.na(watson_padj) &
+      abs(watson_log2fc) > 0.30 & watson_padj < 0.05,
+    
+    crick_brg1_sig = !is.na(crick_log2fc) & !is.na(crick_padj) &
+      abs(crick_log2fc) > 0.30 & crick_padj < 0.05
+  )
+
+# Apply coordination classification using flags
+bdp_expr <- bdp_expr %>%
   mutate(
     brg1_coordination = case_when(
-      watson_padj < 0.05 & crick_padj < 0.05 &
+      watson_brg1_sig & crick_brg1_sig &
         sign(watson_log2fc) == sign(crick_log2fc) ~ "Synchronised",
-      watson_padj < 0.05 & crick_padj < 0.05 &
+      
+      watson_brg1_sig & crick_brg1_sig &
         sign(watson_log2fc) != sign(crick_log2fc) ~ "Opposite",
-      xor(watson_padj < 0.05, crick_padj < 0.05) ~ "Asymmetric",
+      
+      xor(watson_brg1_sig, crick_brg1_sig) ~ "Asymmetric",
+      
       TRUE ~ "Unchanged"
     )
   ) %>%
@@ -106,16 +122,31 @@ bdp_expr <- bdp %>%
       rename(crick_ensembl_id = ensembl_gene_id),
     by = "crick_ensembl_id"
   ) %>%
-  rename(oct4_crick_log2fc = oct4_log2fc, oct4_crick_padj = oct4_padj) %>%
+  rename(oct4_crick_log2fc = oct4_log2fc, oct4_crick_padj = oct4_padj)
   
   # Step 4: Classify Oct4 coordination
+  # 1. Add significance flags for Watson and Crick strands
+  bdp_expr <- bdp_expr %>%
+    mutate(
+      watson_sig = !is.na(oct4_watson_log2fc) & !is.na(oct4_watson_padj) &
+        abs(oct4_watson_log2fc) > 0.30 & oct4_watson_padj < 0.05,
+      
+      crick_sig = !is.na(oct4_crick_log2fc) & !is.na(oct4_crick_padj) &
+        abs(oct4_crick_log2fc) > 0.30 & oct4_crick_padj < 0.05
+    )
+
+# 2. Classify coordination
+bdp_expr <- bdp_expr %>%
   mutate(
     oct4_coordination = case_when(
-      oct4_watson_padj < 0.05 & oct4_crick_padj < 0.05 &
+      watson_sig & crick_sig &
         sign(oct4_watson_log2fc) == sign(oct4_crick_log2fc) ~ "Synchronised",
-      oct4_watson_padj < 0.05 & oct4_crick_padj < 0.05 &
+      
+      watson_sig & crick_sig &
         sign(oct4_watson_log2fc) != sign(oct4_crick_log2fc) ~ "Opposite",
-      xor(oct4_watson_padj < 0.05, oct4_crick_padj < 0.05) ~ "Asymmetric",
+      
+      xor(watson_sig, crick_sig) ~ "Asymmetric",
+      
       TRUE ~ "Unchanged"
     )
   )
@@ -153,3 +184,93 @@ cat("\nOCT4 Coordination Summary:\n")
 print(oct4_summary)
 
 oct4_results %>% filter(ensembl_gene_id == "ENSMUSG00000059552") %>% dplyr::select(oct4_log2fc, oct4_padj)
+
+# ---- BDP gene coverage verification ----
+
+# Get unique BDP gene IDs
+bdp_ids <- unique(c(bdp$watson_ensembl_id, bdp$crick_ensembl_id)) %>%
+  na.omit()
+
+# Get unique expressed gene IDs from the Oct4 dataset
+expr_ids <- unique(oct4_clean$ensembl_gene_id)
+
+# Find how many BDP-linked genes are detected in Oct4 RNA-seq
+expressed_bdp_genes <- intersect(bdp_ids, expr_ids)
+
+# Print summary
+cat("Total BDP-linked genes:", length(bdp_ids), "\n")
+cat("BDP-linked genes detected in Oct4 dataset:", length(expressed_bdp_genes), "\n")
+
+# Calculate and print percentage
+coverage_rate <- length(expressed_bdp_genes) / length(bdp_ids) * 100
+cat("Coverage rate:", round(coverage_rate, 1), "%\n")
+
+#Of the 6,432 total BDP-linked genes, 3,897 (~61%) were detected in the Oct4 nuclear RNA-seq dataset (GSE87821). Coordination analysis was therefore limited to these expressed genes
+
+
+example_refseqs <- c(
+  "NM_001001333", "NM_001001445", "NM_001001565",
+  "NM_001001809", "NM_001001883"
+)
+
+mapping %>%
+  filter(refseq_mrna %in% example_refseqs)
+
+
+oct4_synch_bdp <- bdp_expr %>%
+  filter(oct4_coordination == "Synchronised") %>%
+  dplyr::select(watson_gene_name, crick_gene_name,
+                oct4_watson_log2fc, oct4_crick_log2fc,
+                oct4_watson_padj, oct4_crick_padj)
+oct4_synch_bdp
+
+
+oct4_opposite_bdp <- bdp_expr %>%
+       filter(oct4_coordination == "Opposite") %>%
+       dplyr::select(
+             BDP_ID,
+             watson_gene_name, crick_gene_name,
+             oct4_watson_log2fc, oct4_crick_log2fc,
+             oct4_watson_padj, oct4_crick_padj)
+ print(oct4_opposite_bdp)
+ 
+ 
+ # Plot for BRG1 coordination
+ bdp_expr %>%
+   filter(!is.na(watson_log2fc) & !is.na(crick_log2fc)) %>%
+   ggplot(aes(x = watson_log2fc, y = crick_log2fc, color = brg1_coordination)) +
+   geom_point(alpha = 0.7, size = 2) +
+   scale_color_manual(values = c(
+     "Synchronised" = "forestgreen",
+     "Opposite" = "firebrick",
+     "Asymmetric" = "goldenrod",
+     "Unchanged" = "grey70"
+   )) +
+   labs(
+     title = "BRG1: Coordination of BDP Gene Pairs",
+     x = "Watson log2FC",
+     y = "Crick log2FC",
+     color = "Coordination"
+   ) +
+   theme_minimal(base_size = 13)
+
+ 
+ # Plot for OCT4 coordination
+bdp_expr %>%
+   filter(!is.na(oct4_watson_log2fc) & !is.na(oct4_crick_log2fc)) %>%
+   ggplot(aes(x = oct4_watson_log2fc, y = oct4_crick_log2fc, color = oct4_coordination)) +
+   geom_point(alpha = 0.7, size = 2) +
+   scale_color_manual(values = c(
+     "Synchronised" = "darkblue",
+     "Opposite" = "orangered",
+     "Asymmetric" = "darkorange",
+     "Unchanged" = "grey70"
+   )) +
+   labs(
+     title = "OCT4: Coordination of BDP Gene Pairs",
+     x = "Watson log2FC",
+     y = "Crick log2FC",
+     color = "Coordination"
+   ) +
+   theme_minimal(base_size = 13)
+ 
