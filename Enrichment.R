@@ -22,8 +22,6 @@ library(ggplot2)
 
 
 #--------- Foreground Setups for Both Strands and Meta Data ----------
-bdp <- read_csv("BDP_Fully_Annotated.csv")
-
 # Extracting the individual Ensembl ids from master dataset FOR EACH STRAND and removing any NA values.
 bdp <- read_csv("BDP_Fully_Annotated.csv")
 
@@ -203,7 +201,7 @@ custom_valid_universe <- union(
   mapped_foreground$SYMBOL,
   mapped_background$SYMBOL
 )
-
+    
 #Default background
 GO_combined <- enrichGO(
   gene          = valid_bdp_symbols,
@@ -224,7 +222,7 @@ GO_combined_custom <- enrichGO(
   gene          = valid_bdp_symbols,
   universe      = custom_valid_universe,
   OrgDb         = org.Mm.eg.db,
-  keyType       = "SYMBOL",
+  keyType       = "ENSEMBL",
   ont           = "BP",
   pAdjustMethod = "BH",
   pvalueCutoff  = 0.05,

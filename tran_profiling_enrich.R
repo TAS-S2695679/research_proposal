@@ -1,47 +1,122 @@
+if (!requireNamespace("BiocManager", quietly = TRUE))
+  install.packages("BiocManager")
+
+BiocManager::install("clusterProfiler")
+
 library(dplyr)
+library(readr)
 library(clusterProfiler)
 library(org.Mm.eg.db)
+library(tibble)
 
-genes_by_class <- bdp_expr %>%
-  dplyr::select(oct4_coordination, watson_ensembl_id, crick_ensembl_id) %>%
-  pivot_longer(cols = c(watson_ensembl_id, crick_ensembl_id), values_to = "ensembl_id") %>%
+# Load data
+bdp <- read_csv("BDP_coordination_results.csv")
+
+# Flatten into a long format: one row per gene
+bdp_long <- bdp %>%
+  transmute(
+    ensembl_id = watson_ensembl_id,
+    coordination = oct4_coordination
+  ) %>%
+  bind_rows(
+    bdp %>%
+      transmute(
+        ensembl_id = crick_ensembl_id,
+        coordination = oct4_coordination
+      )
+  ) %>%
   filter(!is.na(ensembl_id)) %>%
-  distinct() %>%
-  group_by(oct4_coordination) %>%
-  summarise(gene_ids = list(unique(ensembl_id)))
+  distinct()
 
-run_enrichment <- function(genes) {
-  enrichGO(
-    gene         = genes,
-    OrgDb        = org.Mm.eg.db,
-    keyType      = "ENSEMBL",
-    ont          = "MF",
-    pAdjustMethod = "BH",
-    pvalueCutoff  = 0.05,
-    qvalueCutoff  = 0.2,
-    readable      = TRUE
-  )
-}
-
-enrichment_results <- lapply(setNames(genes_by_class$gene_ids, genes_by_class$oct4_coordination), run_enrichment)
-dotplot(enrichment_results[["Synchronised"]], showCategory = 20, title = "GO BP Enrichment in Oct4-Synchronised BDPs")
-s
-write.csv(as.data.frame(enrichment_results[["Synchronised"]]), "oct4_synchronised_GO.csv")
-
-oct4_sync_genes <- bdp_expr %>%
-  filter(oct4_coordination == "Synchronised") %>%
-  dplyr::select(watson_ensembl_id, crick_ensembl_id) %>%
-  pivot_longer(everything(), values_to = "ensembl_id") %>%
-  distinct(ensembl_id) %>%
-  filter(!is.na(ensembl_id)) %>%
+# Prepare gene sets
+asymmetric_genes <- bdp_long %>%
+  filter(coordination == "Asymmetric") %>%
   pull(ensembl_id)
 
-entrez_ids <- bitr(oct4_sync_genes, fromType = "ENSEMBL", toType = "ENTREZID", OrgDb = org.Mm.eg.db)
-kegg_results <- enrichKEGG(
-  gene = entrez_ids$ENTREZID,
-  organism = 'mmu',
-  pvalueCutoff = 0.05,
-  qvalueCutoff = 0.2
+synchronised_genes <- bdp_long %>%
+  filter(coordination == "Synchronised") %>%
+  pull(ensembl_id)
+
+bdp_background_genes <- bdp_long %>%
+  pull(ensembl_id) %>%
+  unique()
+
+unchanged_genes <- bdp_long %>%
+  filter(coordination == "Unchanged") %>%
+  pull(ensembl_id)
+
+# Run GO enrichment: ASYMMETRIC
+asym_enrich <- enrichGO(
+  gene          = asymmetric_genes,
+  universe      = bdp_background_genes,
+  OrgDb         = org.Mm.eg.db,
+  keyType       = "ENSEMBL",
+  ont           = "BP",
+  pAdjustMethod = "BH",
+  pvalueCutoff  = 0.05,
+  readable      = TRUE
 )
 
-head(kegg_results)
+# Run GO enrichment: SYNCHRONISED
+sync_enrich <- enrichGO(
+  gene          = synchronised_genes,
+  universe      = bdp_background_genes,
+  OrgDb         = org.Mm.eg.db,
+  keyType       = "ENSEMBL",
+  ont           = "BP",
+  pAdjustMethod = "BH",
+  pvalueCutoff  = 0.05,
+  readable      = TRUE
+)
+
+# Save results
+write.csv(as.data.frame(asym_enrich), "outputs/asymmetric_bdp_go_enrichment.csv", row.names = FALSE)
+write.csv(as.data.frame(sync_enrich), "outputs/synchronised_bdp_go_enrichment.csv", row.names = FALSE)
+
+# Quick check
+print(head(asym_enrich))
+print(head(sync_enrich))
+
+#From custom background creation in original enrichment
+custom_valid_universe <- union(
+  foreground_metadata$ensembl_id, matched_background$ensembl_id)
+
+asym_enrich <- enrichGO(
+  gene          = asymmetric_genes,
+  universe      = custom_valid_universe,
+  OrgDb         = org.Mm.eg.db,
+  keyType       = "ENSEMBL",
+  ont           = "BP",
+  pAdjustMethod = "BH",
+  pvalueCutoff  = 0.05,
+  readable      = TRUE
+)
+
+# Run GO enrichment: SYNCHRONISED
+sync_enrich <- enrichGO(
+  gene          = synchronised_genes,
+  universe      = custom_valid_universe,
+  OrgDb         = org.Mm.eg.db,
+  keyType       = "ENSEMBL",
+  ont           = "BP",
+  pAdjustMethod = "BH",
+  pvalueCutoff  = 0.05,
+  readable      = TRUE
+)
+
+
+unchanged_enrich <- enrichGO(
+  gene          = unchanged_genes,
+  universe      = custom_valid_universe,
+  OrgDb         = org.Mm.eg.db,
+  keyType       = "ENSEMBL",
+  ont           = "BP",
+  pAdjustMethod = "BH",
+  pvalueCutoff  = 0.05,
+  readable      = TRUE
+)
+
+
+write.csv(as.data.frame(asym_enrich), "outputs/asymmetric_bdp_go_enrichment_custom.csv", row.names = FALSE)
+write.csv(as.data.frame(sync_enrich), "outputs/synchronised_bdp_go_enrichment_custom.csv", row.names = FALSE)
+write.csv(as.data.frame(unchanged_enrich), "outputs/unchanged_bdp_go_enrichment_custom.csv", row.names = FALSE)

@@ -274,3 +274,30 @@ bdp_expr %>%
    ) +
    theme_minimal(base_size = 13)
  
+
+go_overlap <- read_csv("outputs/GO_BP_BDP_TP53_overlap_genes.csv")
+coordination <- read_csv("BDP_coordination_results.csv")
+
+# Combine Watson + Crick Ensembl IDs with coordination
+coord_long <- coordination %>%
+  transmute(BDP_ID, gene = watson_ensembl_id, coordination = oct4_coordination) %>%
+  bind_rows(
+    coordination %>%
+      transmute(BDP_ID, gene = crick_ensembl_id, coordination = oct4_coordination)
+  ) %>%
+  filter(!is.na(gene))
+
+# Match GO-p53 overlap genes with coordination info
+overlap_with_coordination <- go_overlap %>%
+  mutate(gene = ensembl_id) %>%
+  left_join(coord_long, by = "gene")
+
+# Summary table
+coord_summary <- overlap_with_coordination %>%
+  count(coordination, sort = TRUE)
+
+write_csv(overlap_with_coordination, "outputs/TP53_overlap_coordination_genes.csv")
+write_csv(coord_summary, "outputs/TP53_overlap_coordination_summary.csv")
+
+print(coord_summary)
+

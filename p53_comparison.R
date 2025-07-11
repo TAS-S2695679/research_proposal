@@ -5,6 +5,7 @@ library(tibble)
 library(tidyr)
 library(stringr)
 library(biomaRt)
+library(tidyverse)
 # ------------------ Load Data ------------------
 
 # Full set of expressed genes
@@ -314,3 +315,63 @@ oct4_clean %>%
 oct4_clean %>%
   filter(ensembl_gene_id %in% c("ENSMUSG00000064128", "ENSMUSG00000054509")) %>%
   select(ensembl_gene_id, oct4_log2fc, oct4_padj)
+
+
+# ------------------ Cross-Referencing GO BP Terms with BDP and p53 Hits for validation ------------------
+
+go_bp <- read_csv("GO_BP_combined.csv")  # BP enrichment results (default background)
+bdp <- read_csv("BDP_Fully_Annotated.csv")   # Annotated BDP catalogue
+p53_hits <- read_csv("p53_BDP_reactome_hits.csv")  # Genes from TP53-related Reactome pathways
+
+# ------------------ 1. Filter for p53-related GO terms ------------------
+keywords <- c("apoptosis", "cell cycle arrest", "DNA damage", "TP53", "p53", "stress", "senescence", "death")
+
+filtered_go <- go_bp %>%
+  filter(str_detect(tolower(Description), str_c(keywords, collapse = "|")))
+
+# ------------------ 2. Parse and flatten gene lists ------------------
+go_gene_list <- filtered_go %>%
+  separate_rows(geneID, sep = "/") %>%
+  mutate(gene = toupper(geneID)) %>%
+  distinct(gene)
+
+# ------------------ 3. Prepare long-format BDP gene list ------------------
+bdp_long <- bind_rows(
+  bdp %>%
+    transmute(
+      gene = toupper(watson_gene_name),
+      ensembl_id = watson_ensembl_id,
+      strand = "Watson"
+    ),
+  bdp %>%
+    transmute(
+      gene = toupper(crick_gene_name),
+      ensembl_id = crick_ensembl_id,
+      strand = "Crick"
+    )
+) %>%
+  filter(!is.na(gene) & gene != "")
+
+# ------------------ 4. Match GO genes to BDPs ------------------
+go_bdp_hits <- go_gene_list %>%
+  inner_join(bdp_long, by = "gene")  # brings in Ensembl ID and strand
+
+# ------------------ 5. Compare with TP53 Reactome hits ------------------
+p53_genes <- unique(toupper(p53_hits$gene))
+
+go_bdp_hits <- go_bdp_hits %>%
+  mutate(is_in_p53_reactome = gene %in% p53_genes)
+
+# ------------------ 6. Summary statistics ------------------
+summary_counts <- go_bdp_hits %>%
+  summarise(
+    total_GO_genes_in_BDPs = n(),
+    overlap_with_p53_reactome = sum(is_in_p53_reactome)
+  )
+
+# ------------------ 7. Save results ------------------
+write_csv(go_bdp_hits, "outputs/GO_BP_BDP_TP53_overlap_genes.csv")
+write_csv(summary_counts, "outputs/GO_BP_BDP_TP53_overlap_summary.csv")
+
+# Print summary
+print(summary_counts)
