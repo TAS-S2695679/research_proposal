@@ -2,45 +2,83 @@ library(dplyr)
 library(biomaRt)
 library(readr)
 library(ggplot2)
+library(org.Mm.eg.db)
+library(AnnotationDbi)
 
-brg1_results <- read.delim("data/GSE87821_BRG1fl.nucRNAseq.DESeq2_Results.txt.gz", sep = ",", header = TRUE)
-oct4_results <- read.delim("data/GSE87821_ZHBTC4.nucRNAseq.DESeq2_Results.txt.gz", sep = ",", header = TRUE)
+brg1_results <- read_csv("data/BRG1_DESeq2_results.csv")
+oct4_results <- read_csv("data/Oct4_DESeq2_results.csv")
 
-# BRG1
-brg1_results <- brg1_results %>%
-  rename(
-    refseq_id = refGeneID,
-    brg1_log2fc = BRG1fl.DESeq.DOX.UNT_log2FoldChange,
-    brg1_padj = BRG1fl.DESeq.PvalueAdjusted
-  )
-
-oct4_results <- oct4_results %>%
-  rename(
-    refseq_id = refGeneID,
-    oct4_log2fc = ZHBTC4.DESeq.DOX.UNT_log2FoldChange,
-    oct4_padj = ZHBTC4.DESeq.PvalueAdjusted
-  )
 
 all_refseq_ids <- unique(c(brg1_results$refseq_id, oct4_results$refseq_id))
 
+all_refseq_ids_no_version <- sub("\\..*", "", all_refseq_ids)
 
-ensembl <- useEnsembl(biomart = "genes", dataset = "mmusculus_gene_ensembl")
 
-mapping <- getBM(
-  attributes = c("refseq_mrna", "ensembl_gene_id"),
-  filters = "refseq_mrna",
-  values = all_refseq_ids,
-  mart = ensembl
+refseq_to_ensembl <- AnnotationDbi::select(
+  org.Mm.eg.db,
+  keys = all_refseq_ids_no_version,
+  keytype = "REFSEQ",
+  columns = c("ENSEMBL", "SYMBOL")
 )
+
+mapping <- unique(refseq_to_ensembl[, c("REFSEQ", "ENSEMBL")])
+colnames(mapping)[colnames(mapping) == "REFSEQ"] <- "refseq_id"
+colnames(mapping)[colnames(mapping) == "ENSEMBL"] <- "ensembl_gene_id"
+
+
+
+
+#ensembl <- useEnsembl(biomart = "genes", dataset = "mmusculus_gene_ensembl", version = 101)
+
+#mapping <- getBM(
+ # attributes = c("refseq_mrna", "ensembl_gene_id"),
+  #filters = "refseq_mrna",
+  #values = all_refseq_ids,
+  #mart = ensembl
+#)
+
+
+all_bdp_ids <- unique(c(bdp$watson_ensembl_id, bdp$crick_ensembl_id))
+
+matched <- all_bdp_ids %in% mapping$ensembl_gene_id
+
+table(matched)
+
+valid_pairs <- bdp %>%
+  filter(watson_ensembl_id %in% detected_genes,
+         crick_ensembl_id %in% detected_genes)
+
+nrow(valid_pairs)
+
+
+initial_valid_pairs <- bdp %>%
+  filter(
+    watson_ensembl_id %in% detected_genes,
+    crick_ensembl_id %in% detected_genes
+  )
+
+nrow(initial_valid_pairs)
+
+
+
 
 # Merge mapping
 brg1_results <- brg1_results %>%
-  left_join(mapping, by = c("refseq_id" = "refseq_mrna")) %>%
-  filter(!is.na(ensembl_gene_id))
+  dplyr::left_join(mapping, by = c("refseq_id" = "refseq_id")) %>%
+  dplyr::filter(!is.na(ensembl_gene_id))
+
+brg1_results$ensembl_gene_id <- as.character(brg1_results$ensembl_gene_id)
+
 
 oct4_results <- oct4_results %>%
-  left_join(mapping, by = c("refseq_id" = "refseq_mrna")) %>%
-  filter(!is.na(ensembl_gene_id))
+  left_join(mapping, by = c("refseq_id" = "refseq_id")) %>%
+  mutate(status = case_when(
+    is.na(ensembl_gene_id) ~ "Unmapped",
+    is.na(oct4_log2fc) ~ "Low expression",
+    TRUE ~ "OK"
+  ))
+
+oct4_results$ensembl_gene_id <- as.character(oct4_results$ensembl_gene_id)
 
 
 head(brg1_results)
@@ -49,15 +87,14 @@ head(oct4_results)
 # Filter BRG1 results to 1 row per Ensembl ID
 brg1_clean <- brg1_results %>%
   group_by(ensembl_gene_id) %>%
-  arrange(brg1_padj) %>%
-  slice(1) %>%
+  slice_min(order_by = brg1_padj, n = 1, with_ties = FALSE) %>%
   ungroup()
 
 # Filter oct4 results to 1 row per Ensembl ID
+
 oct4_clean <- oct4_results %>%
   group_by(ensembl_gene_id) %>%
-  arrange(oct4_padj) %>%
-  slice(1) %>%
+  slice_min(order_by = oct4_padj, n = 1, with_ties = FALSE) %>%
   ungroup()
 
 #--------- Now to merge and classigy BDP by Coordination ----------
@@ -67,18 +104,21 @@ bdp_expr <- bdp %>%
   left_join(
     brg1_clean %>%
       dplyr::select(ensembl_gene_id, brg1_log2fc, brg1_padj) %>%
-      rename(watson_ensembl_id = ensembl_gene_id),
-    by = "watson_ensembl_id"
+      dplyr::rename(
+        watson_log2fc = brg1_log2fc,
+        watson_padj = brg1_padj
+      ),
+    by = c("watson_ensembl_id" = "ensembl_gene_id")
   ) %>%
-  rename(watson_log2fc = brg1_log2fc, watson_padj = brg1_padj) %>%
-  
   left_join(
     brg1_clean %>%
       dplyr::select(ensembl_gene_id, brg1_log2fc, brg1_padj) %>%
-      rename(crick_ensembl_id = ensembl_gene_id),
-    by = "crick_ensembl_id"
-  ) %>%
-  rename(crick_log2fc = brg1_log2fc, crick_padj = brg1_padj)
+      dplyr::rename(
+        crick_log2fc = brg1_log2fc,
+        crick_padj = brg1_padj
+      ),
+    by = c("crick_ensembl_id" = "ensembl_gene_id")
+  )
   
   # Step 2: Classify BRG1 coordination
   
@@ -92,37 +132,38 @@ bdp_expr <- bdp %>%
   )
 
 # Apply coordination classification using flags
-bdp_expr <- bdp_expr %>%
-  mutate(
-    brg1_coordination = case_when(
-      watson_brg1_sig & crick_brg1_sig &
-        sign(watson_log2fc) == sign(crick_log2fc) ~ "Synchronised",
-      
-      watson_brg1_sig & crick_brg1_sig &
-        sign(watson_log2fc) != sign(crick_log2fc) ~ "Opposite",
-      
-      xor(watson_brg1_sig, crick_brg1_sig) ~ "Asymmetric",
-      
-      TRUE ~ "Unchanged"
+  bdp_expr <- bdp_expr %>%
+    mutate(
+      brg1_coordination = case_when(
+        watson_brg1_sig & crick_brg1_sig &
+          sign(watson_log2fc) == sign(crick_log2fc) ~ "Synchronised",
+        
+        watson_brg1_sig & crick_brg1_sig &
+          sign(watson_log2fc) != sign(crick_log2fc) ~ "Opposite",
+        
+        xor(watson_brg1_sig, crick_brg1_sig) ~ "Asymmetric",
+        
+        TRUE ~ "Unchanged"
+      )
+    ) %>%
+    left_join(
+      oct4_clean %>%
+        dplyr::select(ensembl_gene_id, oct4_log2fc, oct4_padj) %>%
+        dplyr::rename(
+          oct4_watson_log2fc = oct4_log2fc,
+          oct4_watson_padj = oct4_padj
+        ),
+      by = c("watson_ensembl_id" = "ensembl_gene_id")
+    ) %>%
+    left_join(
+      oct4_clean %>%
+        dplyr::select(ensembl_gene_id, oct4_log2fc, oct4_padj) %>%
+        dplyr::rename(
+          oct4_crick_log2fc = oct4_log2fc,
+          oct4_crick_padj = oct4_padj
+        ),
+      by = c("crick_ensembl_id" = "ensembl_gene_id")
     )
-  ) %>%
-  
-  # Step 3: Join Oct4 results for both strands
-  left_join(
-    oct4_clean %>%
-      dplyr::select(ensembl_gene_id, oct4_log2fc, oct4_padj) %>%
-      rename(watson_ensembl_id = ensembl_gene_id),
-    by = "watson_ensembl_id"
-  ) %>%
-  rename(oct4_watson_log2fc = oct4_log2fc, oct4_watson_padj = oct4_padj) %>%
-  
-  left_join(
-    oct4_clean %>%
-      dplyr::select(ensembl_gene_id, oct4_log2fc, oct4_padj) %>%
-      rename(crick_ensembl_id = ensembl_gene_id),
-    by = "crick_ensembl_id"
-  ) %>%
-  rename(oct4_crick_log2fc = oct4_log2fc, oct4_crick_padj = oct4_padj)
   
   # Step 4: Classify Oct4 coordination
   # 1. Add significance flags for Watson and Crick strands
@@ -156,25 +197,37 @@ table(bdp_expr$brg1_coordination)
 table(bdp_expr$oct4_coordination)
 
 
-bdp_expr_export <- bdp_expr %>%
+bdp_expr <- bdp_expr %>%
   dplyr::select(BDP_ID,
          watson_ensembl_id, crick_ensembl_id,
-         brg1_coordination, oct4_coordination)
+         brg1_coordination, oct4_coordination, oct4_crick_log2fc, oct4_watson_log2fc)
 
-write_csv(bdp_expr_export, "BDP_coordination_results.csv")
+detected_genes <- unique(c(oct4_clean$ensembl_gene_id, brg1_clean$ensembl_gene_id))
 
+bdp_expr <- bdp_expr %>%
+  filter(!is.na(watson_ensembl_id),
+         !is.na(crick_ensembl_id),
+         watson_ensembl_id %in% detected_genes,
+         crick_ensembl_id %in% detected_genes)
+
+write_csv(bdp_expr, "BDP_coordination_results.csv")
+
+
+bdp_expr <- bdp_expr %>%
+  filter(!is.na(watson_ensembl_id) & !is.na(crick_ensembl_id))
+bdp_expr <- as_tibble(bdp_expr)
 
 # ------------------ Coordination Summary ------------------
 
 # BRG1 coordination counts
 brg1_summary <- bdp_expr %>%
-  count(brg1_coordination, sort = TRUE) %>%
-  rename(Category = brg1_coordination, Count = n)
+  dplyr::count(brg1_coordination, sort = TRUE) %>%
+  dplyr::rename(Category = brg1_coordination, Count = n)
 
 # OCT4 coordination counts
 oct4_summary <- bdp_expr %>%
-  count(oct4_coordination, sort = TRUE) %>%
-  rename(Category = oct4_coordination, Count = n)
+  dplyr::count(oct4_coordination, sort = TRUE) %>%
+  dplyr::rename(Category = oct4_coordination, Count = n)
 
 # Print summaries
 cat("BRG1 Coordination Summary:\n")
@@ -275,7 +328,11 @@ bdp_expr %>%
    theme_minimal(base_size = 13)
  
 
-go_overlap <- read_csv("outputs/GO_BP_BDP_TP53_overlap_genes.csv")
+
+
+go_overlap <- read_csv("outputs/GO_BP_BDP_TP53_overlap_genes.csv") %>%
+  filter(is_in_p53_reactome == TRUE)
+
 coordination <- read_csv("BDP_coordination_results.csv")
 
 # Combine Watson + Crick Ensembl IDs with coordination
@@ -289,15 +346,58 @@ coord_long <- coordination %>%
 
 # Match GO-p53 overlap genes with coordination info
 overlap_with_coordination <- go_overlap %>%
-  mutate(gene = ensembl_id) %>%
-  left_join(coord_long, by = "gene")
+  left_join(coord_long, by = c("ensembl_id" = "gene")) %>%
+  dplyr::distinct(ensembl_id, .keep_all = TRUE) %>%
+  dplyr::count(coordination, sort = TRUE)
 
-# Summary table
-coord_summary <- overlap_with_coordination %>%
-  count(coordination, sort = TRUE)
+
 
 write_csv(overlap_with_coordination, "outputs/TP53_overlap_coordination_genes.csv")
-write_csv(coord_summary, "outputs/TP53_overlap_coordination_summary.csv")
 
-print(coord_summary)
+print(overlap_with_coordination)
+
+
+
+
+
+
+
+
+
+# Combine Watson and Crick into long format with labels
+bdp_long <- bdp_expr %>%
+  transmute(
+    BDP_ID,
+    gene_strand = "Watson",
+    ensembl_id = watson_ensembl_id,
+    log2fc = oct4_watson_log2fc,
+    padj = oct4_watson_padj
+  ) %>%
+  bind_rows(
+    bdp_expr %>%
+      transmute(
+        BDP_ID,
+        gene_strand = "Crick",
+        ensembl_id = crick_ensembl_id,
+        log2fc = oct4_crick_log2fc,
+        padj = oct4_crick_padj
+      )
+  )
+
+# Classify reason for NA
+bdp_long <- bdp_long %>%
+  mutate(
+    na_reason = case_when(
+      is.na(ensembl_id) ~ "Unmapped (no Ensembl ID)",
+      !is.na(ensembl_id) & (is.na(log2fc) | is.na(padj)) ~ "Low expression (not tested)",
+      TRUE ~ "OK"
+    )
+  )
+
+# Summarise
+bdp_na_summary <- bdp_long %>%
+  count(na_reason) %>%
+  arrange(desc(n))
+
+print(bdp_na_summary)
 

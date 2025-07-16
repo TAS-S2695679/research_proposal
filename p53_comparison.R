@@ -6,6 +6,7 @@ library(tidyr)
 library(stringr)
 library(biomaRt)
 library(tidyverse)
+library(clusterProfiler)
 # ------------------ Load Data ------------------
 
 # Full set of expressed genes
@@ -182,7 +183,7 @@ write_csv(p53_annotated_hits_unique, "outputs/p53_BDP_reactome_hits_unique.csv")
 
 # ------------------ Biotype Summary ------------------
 biotype_summary <- p53_annotated_hits_unique %>%
-  count(biotype, sort = TRUE)
+  dplyr::count(biotype, sort = TRUE)
 
 print("Summary of Biotypes in p53-Associated BDP Genes:")
 print(biotype_summary)
@@ -192,7 +193,7 @@ coord_data <- read_csv("BDP_coordination_results.csv")
 # Watson strand mapping
 watson_status <- coord_data %>%
   dplyr::select(watson_ensembl_id, brg1_coordination, oct4_coordination) %>%
-  rename(
+  dplyr::rename(
     ensembl_id = watson_ensembl_id,
     brg1_sync = brg1_coordination,
     oct4_sync = oct4_coordination
@@ -201,7 +202,7 @@ watson_status <- coord_data %>%
 # Crick strand mapping
 crick_status <- coord_data %>%
   dplyr::select(crick_ensembl_id, brg1_coordination, oct4_coordination) %>%
-  rename(
+  dplyr::rename(
     ensembl_id = crick_ensembl_id,
     brg1_sync = brg1_coordination,
     oct4_sync = oct4_coordination
@@ -220,13 +221,13 @@ p53_hits_annotated <- p53_annotated_hits_unique %>%
 
 # Brg1 summary
 brg1_summary <- p53_hits_annotated %>%
-  count(brg1_sync, sort = TRUE) %>%
-  rename(BRG1_Coordination = brg1_sync, Count = n)
+  dplyr::count(brg1_sync, sort = TRUE) %>%
+  dplyr::rename(BRG1_Coordination = brg1_sync, Count = n)
 
 # Oct4 summary
 oct4_summary <- p53_hits_annotated %>%
-  count(oct4_sync, sort = TRUE) %>%
-  rename(Oct4_Coordination = oct4_sync, Count = n)
+  dplyr::count(oct4_sync, sort = TRUE) %>%
+  dplyr::rename(Oct4_Coordination = oct4_sync, Count = n)
 
 # ------------------ Output ------------------
 print("Coordination of p53-BDP Genes under BRG1 depletion:")
@@ -375,3 +376,36 @@ write_csv(summary_counts, "outputs/GO_BP_BDP_TP53_overlap_summary.csv")
 
 # Print summary
 print(summary_counts)
+
+
+
+# ------------------ ENRICHMENT OF P53 REACTOME RESULTS ------------------
+
+p53_bdp <- read_csv("outputs/p53_BDP_reactome_hits_unique.csv")
+
+# Assume column is called "ensembl_id" (change if needed)
+p53_genes <- unique(p53_bdp$ensembl_id)
+
+# Load your full BDP background (Watson + Crick Ensembl IDs)
+bdp <- read_csv("BDP_Fully_Annotated.csv")
+
+bdp_genes <- unique(c(bdp$watson_ensembl_id, bdp$crick_ensembl_id)) %>%
+  na.omit()
+
+# Run GO BP enrichment using BDPs as background
+p53_enrich <- enrichGO(
+  gene          = p53_genes,
+  universe      = bdp_genes,
+  OrgDb         = org.Mm.eg.db,
+  keyType       = "ENSEMBL",
+  ont           = "BP",
+  pvalueCutoff  = 0.05,
+  pAdjustMethod = "BH",
+  readable      = TRUE
+)
+
+# Save results
+write.csv(as.data.frame(p53_enrich), "outputs/p53_bdp_go_enrichment.csv", row.names = FALSE)
+
+# Quick view
+head(as.data.frame(p53_enrich))

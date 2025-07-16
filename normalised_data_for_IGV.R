@@ -77,7 +77,7 @@ cat("\n All strand-specific normalised .bw files saved to:", output_dir, "\n")
 
 
 #------Numerically quantify genes of interest ------
-genes_of_interest = c("CDK2", "Pmel", 'PIP4K2B', 'Mir8102', 'CENPJ', 'Parp4', 'TIGAR', 'Platr31')
+genes_of_interest = c("Trp53", "Wrap53", 'Fzd10', 'Fzd10os', 'Dnmt3l', 'Aire', 'Pnma2', 'Dpysl2')
 
 ensembl <- useEnsembl(biomart = "genes", dataset = "mmusculus_gene_ensembl", version =102)
 
